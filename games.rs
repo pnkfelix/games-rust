@@ -76,6 +76,7 @@ pub mod games {
 
 
     pub mod chess {
+        use std::util;
         use super::offset_range;
 
         #[deriving(ToStr,Clone,Eq)]
@@ -142,6 +143,46 @@ pub mod games {
             }
         }
 
+        struct OccupiedSquaresIter<'self> {
+            board: &'self Board,
+            row:Row,
+            col:Col,
+            color: Color,
+        }
+
+        impl<'self> Iterator<Square> for OccupiedSquaresIter<'self> {
+            fn next(&mut self) -> Option<Square> {
+                debug!("OccupiedSquaresIter next: %?", (self.row, self.col));
+                loop {
+                    debug!("OccupiedSquaresIter step: %?", (self.row, self.col));
+                    if *self.row >= 8 {
+                        return None;
+                    } else if *self.col >= 8 {
+                        *self.row = *self.row + 1;
+                        *self.col = 0;
+                        loop;
+                    } else {
+                        let s = Square { letter: self.col, number: self.row };
+                        *self.col = *self.col + 1;
+                        match self.board.at(s) {
+                            None           => loop,
+                            Some(Man(c,p)) => if c == self.color {
+                                return Some(s)
+                            } else {
+                                loop
+                            },
+                        }
+                    }
+                }
+            }
+        }
+
+        impl Board {
+            fn occupied_squares_iter<'a>(&'a self, color: Color) -> OccupiedSquaresIter<'a> {
+                OccupiedSquaresIter { board: self, row: Row(0), col: Col(0), color: color }
+            }
+        }
+
         #[deriving(Eq)]
         pub struct Row(uint);
 
@@ -178,6 +219,16 @@ pub mod games {
             fn delta_from(&self, s: Square) -> DSquare {
                 DSquare{ dcol: self.letter - s.letter, drow: self.number - s.number }
             }
+            fn plus(&self, dcol: int, drow: int) -> Option<Square> {
+                let Square{ letter: col, number: row } = *self;
+                let ncol = *col as int + dcol;
+                let nrow = *row as int + drow;
+                if ncol < 0 || ncol >= 8 || nrow < 0 || nrow >= 8 {
+                    None
+                } else {
+                    Some(Square{letter: Col(ncol as uint), number: Row(nrow as uint)})
+                }
+            }
         }
 
         impl ToStr for Square {
@@ -211,6 +262,104 @@ pub mod games {
                 }
                 accum = accum + " abcdefgh";
                 fmt!("%s", accum)
+            }
+
+            pub fn radiate(&self, s:Square, units:~[(int,int)]) -> ~[Square] {
+                let mut accum = ~[];
+                for v in units.iter() {
+                    let (dc, dr) = *v;
+                    let mut cursor = s;
+                    loop {
+                        let c = cursor.plus(dc,dr);
+                        match c {
+                            Some(s) => {
+                                if self.at(s).is_none() {
+                                    accum.push(s);
+                                    cursor = s;
+                                    loop;
+                                } else {
+                                    break;
+                                }
+                            },
+                            _ => break,
+                        }
+                    }
+                }
+                return accum;
+            }
+            pub fn radiate_diagonal(&self, s:Square) -> ~[Square] {
+                self.radiate(s, ~[(-1,-1), (-1,1), (1,1), (1,-1)])
+            }
+
+            pub fn radiate_linear(&self, s:Square) -> ~[Square] {
+                self.radiate(s, ~[(-1,0), (0,-1), (0,1), (1,0)])
+            }
+
+            pub fn radiate_eightway(&self, s:Square) -> ~[Square] {
+                self.radiate(s, ~[(-1,-1), (-1,1), (1,1), (1,-1),
+                                  (-1,0), (0,-1), (0,1), (1,0)])
+            }
+
+            pub fn get_moves(&self, s:Square) -> ~[Square] {
+                fn flatten(vec: ~[Option<Square>]) -> ~[Square] {
+                    vec.flat_map(|x|match *x { None => ~[], Some(o) => ~[o] })
+                }
+                let Square{ letter: _, number: row } = s;
+                match self.at(s) {
+                    None => ~[],
+                    Some(Man(color, piece)) => {
+                        match piece {
+                            king   => flatten(~[s.plus(-1,-1), s.plus(-1,0), s.plus(-1,1),
+                                                s.plus( 0,-1),               s.plus( 0,1),
+                                                s.plus( 1,-1), s.plus( 1,0), s.plus( 1,1)]),
+                            queen  => self.radiate_eightway(s),
+                            rook   => self.radiate_linear(s),
+                            bishop => self.radiate_diagonal(s),
+                            knight => flatten(~[s.plus(-2,-1), s.plus(-2, 1),
+                                                s.plus(-1,-2), s.plus(-1, 2),
+                                                s.plus( 1,-2), s.plus( 1, 2),
+                                                s.plus( 2,-1), s.plus( 2, 1)]),
+                            pawn   => {
+                                let mut accum = ~[];
+                                let (vdir, vorigin) = match color {
+                                    white => (1,1),
+                                    black => (-1,6)
+                                };
+
+                                let onefwd = s.plus(0, vdir);
+                                match onefwd {
+                                    None => {},
+                                    Some(onefwd) => {
+                                        accum.push(onefwd);
+                                        if *row == vorigin && self.at(onefwd).is_none() {
+                                            match onefwd.plus(0, vdir) {
+                                                None => {},
+                                                Some(twofwd) => accum.push(twofwd),
+                                            }
+                                        }
+                                    }
+                                }
+                                match s.plus(-1, vdir) {
+                                    None => {},
+                                    Some(lft) => {
+                                        if self.at(lft).is_some() {
+                                            accum.push(lft);
+                                        }
+                                    }
+                                }
+                                match s.plus( 1, vdir) {
+                                    None => {},
+                                    Some(rgt) => {
+                                        if self.at(rgt).is_some() {
+                                            accum.push(rgt);
+                                        }
+                                    }
+                                }
+                                accum
+                            }
+                        }
+                    }
+                }
             }
 
             pub fn cell<'a>(&'a self, s: Square) -> &'a Option<Man> {
@@ -266,7 +415,75 @@ pub mod games {
         struct ElaboratedMove {
             move: Move,
             source: Man,
-            target: Option<Man>
+            target: Option<Man>,
+        }
+
+        struct AllMovesIter<'self> {
+            board: &'self Board,
+            current: Color,
+            rest_squares: OccupiedSquaresIter<'self>,
+            curr_moves: Option<(Square, ~[Square], uint)>,
+        }
+
+        impl<'self> Iterator<Move> for AllMovesIter<'self> {
+            fn next(&mut self) -> Option<Move> {
+                debug!("AllMovesIter next: %?", self);
+                enum Step {
+                    Yielding(uint, Move),
+                    LoopNextSquare,
+                    LoopNewIndex(uint),
+                    LoopNewVec(Square, ~[Square]),
+                    Finished
+                }
+                let mut curr_moves = None;
+                util::swap(&mut self.curr_moves, &mut curr_moves);
+
+                loop {
+                    let step = match curr_moves {
+                        Some((from, ref to_vec, idx)) => {
+                            if idx < to_vec.len() {
+                                let s = to_vec[idx];
+                                match self.board.at(s) {
+                                    None              => { Yielding(idx+1, (from,s)) },
+                                    Some(Man(col, _)) => if col != self.current {
+                                        Yielding(idx+1, (from,s))
+                                    } else {
+                                        LoopNewIndex(idx+1)
+                                    }
+                                }
+                            } else {
+                                LoopNextSquare
+                            }
+                        },
+                        None => match self.rest_squares.next() {
+                            Some(s) => { LoopNewVec(s, self.board.get_moves(s)) }
+                            None => Finished
+                        }
+                    };
+                    debug!("AllMovesIter step: %?", step);
+                    match step {
+                        Yielding(j, m)     => {
+                            match curr_moves {
+                                Some((f, v, i)) => self.curr_moves = Some((f, v, j)),
+                                None => self.curr_moves = curr_moves,
+                            }
+                            return Some(m)
+                        },
+                        LoopNextSquare  => { curr_moves = None; loop; },
+                        LoopNewIndex(i) => {
+                            let (from, to_vec, idx) = curr_moves.unwrap();
+                            curr_moves = Some((from, to_vec, i));
+                            loop;
+                        },
+                        LoopNewVec(s, v)  => {
+                            curr_moves = Some((s, v, 0));
+                            loop;
+                        },
+                        Finished       => { self.curr_moves = curr_moves; return None },
+                    }
+                    util::unreachable() // is there a static_fail?
+                }
+            }
         }
 
         impl Game {
@@ -278,6 +495,15 @@ pub mod games {
                                       fmt!("1 %s \n", pieces_to_str(white, self.white_taken)));
                 let ret = ret + "\n" + self.current.to_str() + "'s move";
                 ret
+            }
+
+            pub fn all_moves_iter<'r>(&'r self) -> AllMovesIter<'r> {
+                AllMovesIter {
+                    board: &'self self.board,
+                    current: self.current,
+                    rest_squares: self.board.occupied_squares_iter(self.current),
+                    curr_moves: None,
+                }
             }
 
             // XXX bleah, I would prefer to pass &self here, not &mut self, but this is
@@ -510,7 +736,7 @@ pub mod games {
     type ChessMove = chess::Move;
 
     pub fn get_move_recur(g: &chess::Game, inp: @Reader) -> ChessMove {
-        print("? ");
+        print(fmt!("%s's move? ", g.current.to_str()));
         let input = inp.read_line();
         println("");
         debug!("Got input: %?",  input);
@@ -606,7 +832,12 @@ pub mod games {
 
         let inp = io::stdin();
         loop {
-            print(fmt!("%s", b.to_str()));
+            println(fmt!("%s", b.to_str()));
+            for m in b.all_moves_iter() {
+                let (from, to) = m;
+                print(fmt!("(%s, %s)", from.to_str(), to.to_str()));
+            }
+            println("");
             let (from, to) = get_move(&b, inp);
             do invalid_move::cond.trap(|(r, m, b)| {
                     let m : Move = m;
