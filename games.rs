@@ -1,7 +1,45 @@
+use std::num::One;
+
 fn main() {
     games::antichess();
 }
 
+ /// A range of numbers from [0, N)
+#[deriving(Clone, DeepClone)]
+pub struct MyRange<A> {
+    priv state: A,
+    priv stop: A,
+    priv one: A
+}
+
+impl<A: Add<A, A> + Ord + Clone> Iterator<A> for MyRange<A> {
+    #[inline]
+    fn next(&mut self) -> Option<A> {
+        if self.state < self.stop {
+            let result = self.state.clone();
+            self.state = self.state + self.one;
+            Some(result)
+        } else {
+            None
+        }
+    }
+
+    // FIXME: #8606 Implement size_hint() on Range
+    // Blocked on #8605 Need numeric trait for converting to `Option<uint>`
+}
+
+// GRRR. iterator library does not offer a way to reuse the existing Range and plugging in
+// one's one One (because all of the fields are private); you can only inherit preexisting
+// settings for One.
+pub fn range_inclusive<A: Add<A, A> + Ord + Clone + One + Neg<A>>(start: A, stop: A) -> MyRange<A> {
+    if start <= stop {
+        MyRange{state: start, stop: stop, one: One::one()}
+    } else {
+        let pos_one : A = One::one();
+        let neg_one = pos_one.neg();
+        MyRange{state: start, stop: stop, one: neg_one }
+    }
+}
 
 pub mod games {
 
@@ -49,7 +87,7 @@ pub mod games {
             }
         }
 
-        #[deriving(Clone)]
+        #[deriving(Clone, ToStr)]
         pub enum Piece { king, queen, rook, bishop, knight, pawn }
 
         condition! {
@@ -126,8 +164,21 @@ pub mod games {
             fn magnitude(&self) -> uint { **self }
         }
 
+        impl Sub<Col,int> for Col { fn sub(&self, c:&Col) -> int { (**self as int) - (**c as int) } }
+        impl Sub<Row,int> for Row { fn sub(&self, c:&Row) -> int { (**self as int) - (**c as int) } }
+
         #[deriving(Eq)]
         pub struct Square { letter: Col, number: Row }
+
+        pub struct DSquare { dcol: int, drow: int }
+        impl Square {
+            fn delta_to(&self, s: Square) -> DSquare {
+                DSquare{ dcol: s.letter - self.letter, drow: s.number - self.number }
+            }
+            fn delta_from(&self, s: Square) -> DSquare {
+                DSquare{ dcol: self.letter - s.letter, drow: self.number - s.number }
+            }
+        }
 
         impl ToStr for Square {
             fn to_str(&self) -> ~str {
@@ -183,6 +234,8 @@ pub mod games {
             source_square_is_empty(Square),
             piece_is_not_your_color(Man),
             target_square_holds_piece_of_your_color(Man),
+            man_cannot_make_move(Man, Move, ~str),
+            move_is_blocked_by(Move, Square),
         }
 
         impl InvalidMoveReason {
@@ -210,6 +263,12 @@ pub mod games {
             v.map(|p| Man(c,*p).to_str()).concat()
         }
 
+        struct ElaboratedMove {
+            move: Move,
+            source: Man,
+            target: Option<Man>
+        }
+
         impl Game {
             pub fn to_str(&self) -> ~str {
                 let ret = self.board.to_str();
@@ -221,7 +280,94 @@ pub mod games {
                 ret
             }
 
-            pub fn validate_move(&mut self, move: Move) -> (Move, Man, Option<Man>) {
+            // XXX bleah, I would prefer to pass &self here, not &mut self, but this is
+            // intended to be called from validate_move.  (Which, come to think of it,
+            // might also take &self instead of &mut self?)  Still, it seems like I keep
+            // encountering motivations for &const self or some such.
+            pub fn is_illegal(&mut self, m: Man, from: Square, to: Square) -> Option<~str> {
+                if from == to { return None; } // Redundantly checking that move is non-trival.
+                let Man(color, p) = m;
+                let dsquare = to.delta_from(from);
+                let DSquare{ dcol: dcol, drow: drow } = dsquare;
+                debug!("is_illegal m: %? (from, to): %? dsquare: %?", m, (from,to), dsquare);
+                match p {
+                    king   => if dcol.abs() <= 1 && drow.abs() <= 1 { None }
+                        else { Some(~"kings can only move one spot") },
+                    queen  => if drow == 0 || dcol == 0 || drow.abs() == dcol.abs() { None }
+                        else { Some(~"queens must move in straight line") },
+                    rook   => if drow == 0 || dcol == 0 { None }
+                        else { Some(~"rooks must move by row or by column alone") },
+                    bishop => if drow.abs() == dcol.abs() { None }
+                        else { Some(~"bishops must move diagonally") },
+                    knight =>
+                        if ((drow.abs() == 2 && dcol.abs() == 1) ||
+                            (drow.abs() == 1 && dcol.abs() == 2)) { None }
+                        else { Some(~"knights move by two and then by one") },
+                    pawn   => {
+                        let (vdir, vorigin) = match color { white => (1,1), black => (-1,6) };
+
+                        if *from.number == vorigin && dcol == 0 && drow == vdir*2
+                            && self.board.at(to).is_none() {
+                            None // foward by two from home row
+                        } else if dcol == 0 && drow == vdir && self.board.at(to).is_none() {
+                            None // foward by one
+                        } else if dcol.abs() == 1 && drow == vdir && self.board.at(to).is_some() {
+                            None // diagonal capture
+                        } else if drow*vdir < 0 {
+                            Some(~"Pawns cannot move backwards")
+                        } else if dcol.abs() > 1 || (dcol.abs() == 1 && drow != vdir) {
+                            Some(~"Pawns cannot capture except via immediate diagonal")
+                        } else if dcol.abs() == 1 && drow == vdir && self.board.at(to).is_none() {
+                            Some(~"Pawns cannot move diagonally unless capturing.")
+                        } else if (*from.number == vorigin && dcol == 0 && drow.abs() > 2) {
+                            Some(fmt!("Pawn in home row move forward by one or two spaces, not %d",
+                                      drow))
+                        } else if drow != vdir {
+                            Some(fmt!("Pawn outside home row move forward by one space, not %d",
+                                      drow))
+                        } else if self.board.at(to).is_some() && dcol == 0 {
+                            Some(~"Pawns cannot capture unless moving diagonally")
+                        } else {
+                            Some(~"Whatever that move is, a pawn cannot do it")
+                        }
+                    }
+                }
+            }
+
+            pub fn find_occupied_between(&mut self, from: Square, to: Square) -> Option<Square> {
+                fn signum(from:uint, to:uint) -> int {
+                    if to > from { 1 } else if to == from { 0 } else { -1 }
+                }
+
+                let (col, end_col) = (*from.letter, *to.letter);
+                let (row, end_row) = (*from.number, *to.number);
+
+                let dcol = signum(col, end_col);
+                let drow = signum(row, end_row);
+
+                let mut row = (row as int + drow) as uint;
+                let mut col = (col as int + dcol) as uint;
+                loop {
+                    if row == end_row && col == end_col { return None; }
+                    let s = Square{ letter: Col(col), number: Row(row) };
+                    if self.board.at(s).is_some() {
+                        return Some(s);
+                    }
+                    row = (row as int + drow) as uint;
+                    col = (col as int + dcol) as uint;
+                }
+            }
+
+            pub fn check_for_blockage(&mut self, m: Man, from: Square, to: Square)
+                -> Option<Square> {
+                let Man(_, p) = m;
+                match p {
+                    king  | knight | pawn   => None,
+                    queen | rook   | bishop => self.find_occupied_between(from, to),
+                }
+            }
+
+            pub fn validate_move(&mut self, move: Move) -> ElaboratedMove {
                 let mut move = move;
 
                 let raise = |reason| {
@@ -261,6 +407,19 @@ pub mod games {
                                 move = raise(piece_is_not_your_color(source_man)); loop;
                             }
 
+                            match self.is_illegal(source_man, from, to) {
+                                None => {},
+                                Some(text) => {
+                                    let r = man_cannot_make_move(source_man, move, text);
+                                    move = raise(r); loop;
+                                }
+                            }
+
+                            match self.check_for_blockage(source_man, from, to) {
+                                None => {},
+                                Some(sq) => { move = raise(move_is_blocked_by(move, sq)); loop; },
+                            }
+
                             debug!("validate move %? : source %? to %?",
                                    move.to_str(), source_man, to.to_str());
                             let target_man : Option<Man> =
@@ -272,8 +431,8 @@ pub mod games {
                                 Some(man @ Man(color, _)) => {
                                     debug!("validate move %? : target man %?", move.to_str(), man);
                                     if self.current == color {
-                                        move = raise(target_square_holds_piece_of_your_color(man));
-                                        loop;
+                                        let r = target_square_holds_piece_of_your_color(man);
+                                        move = raise(r); loop;
                                     } else {
                                         Some(man)
                                     }
@@ -281,7 +440,11 @@ pub mod games {
                             };
 
                             // Okay. now everything has been checked.
-                            return (move, source_man, target_man);
+                            return ElaboratedMove {
+                                move: move,
+                                source: source_man,
+                                target: target_man
+                            };
                         }
                     }
                     fail!("should never get here"); // is there a static_fail?
@@ -291,7 +454,10 @@ pub mod games {
             pub fn do_move(&mut self, (from, to): Move) {
                 let mut move = (from, to);
 
-                let (move, source_man, target_man) = self.validate_move(move);
+                let ElaboratedMove{
+                    move: move, source: source_man, target: target_man
+                } = self.validate_move(move);
+
                 let (from, to) = move;
 
                 self.board.clear(from);
@@ -420,10 +586,8 @@ pub mod games {
 
         if (from_letter.is_some() && from_number.is_some()
             && to_letter.is_some() && to_number.is_some()) {
-            (Square{letter: from_letter.unwrap(),
-                    number: from_number.unwrap()},
-             Square{letter: to_letter.unwrap(),
-                    number: to_number.unwrap()})
+            (Square{letter: from_letter.unwrap(), number: from_number.unwrap()},
+             Square{letter:   to_letter.unwrap(), number: to_number.unwrap()})
         } else {
             unreadable_move::cond.raise(input.clone())
         }
