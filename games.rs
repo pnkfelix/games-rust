@@ -166,7 +166,7 @@ pub mod games {
                         *self.col = *self.col + 1;
                         match self.board.at(s) {
                             None           => loop,
-                            Some(Man(c,p)) => if c == self.color {
+                            Some(Man(c,_)) => if c == self.color {
                                 return Some(s)
                             } else {
                                 loop
@@ -464,14 +464,14 @@ pub mod games {
                     match step {
                         Yielding(j, m)     => {
                             match curr_moves {
-                                Some((f, v, i)) => self.curr_moves = Some((f, v, j)),
+                                Some((f, v, _)) => self.curr_moves = Some((f, v, j)),
                                 None => self.curr_moves = curr_moves,
                             }
                             return Some(m)
                         },
                         LoopNextSquare  => { curr_moves = None; loop; },
                         LoopNewIndex(i) => {
-                            let (from, to_vec, idx) = curr_moves.unwrap();
+                            let (from, to_vec, _) = curr_moves.unwrap();
                             curr_moves = Some((from, to_vec, i));
                             loop;
                         },
