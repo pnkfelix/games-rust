@@ -492,14 +492,14 @@ pub mod games {
 
         pub static initial_board : Board = Board {
             rows:
-                [[Some(wr), Some(wn), Some(wb), Some(wq), Some(wk), Some(wb), Some(wk), Some(wr)],
+                [[Some(wr), Some(wn), Some(wb), Some(wq), Some(wk), Some(wb), Some(wn), Some(wr)],
                  [Some(wp), Some(wp), Some(wp), Some(wp), Some(wp), Some(wp), Some(wp), Some(wp)],
                  [None,     None,     None,      None,     None,    None,     None,     None    ],
                  [None,     None,     None,      None,     None,    None,     None,     None    ],
                  [None,     None,     None,      None,     None,    None,     None,     None    ],
                  [None,     None,     None,      None,     None,    None,     None,     None    ],
                  [Some(bp), Some(bp), Some(bp), Some(bp), Some(bp), Some(bp), Some(bp), Some(bp)],
-                 [Some(br), Some(bn), Some(bb), Some(bq), Some(bk), Some(bb), Some(bk), Some(br)]],
+                 [Some(br), Some(bn), Some(bb), Some(bq), Some(bk), Some(bb), Some(bn), Some(br)]],
         };
     }
 
