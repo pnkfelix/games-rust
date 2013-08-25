@@ -42,6 +42,7 @@ pub fn range_inclusive<A: Add<A, A> + Ord + Clone + One + Neg<A>>(start: A, stop
 }
 
 pub mod games {
+    use std::rand::random;
 
     pub struct offset_range {
         min: char,
@@ -330,11 +331,13 @@ pub mod games {
                                 match onefwd {
                                     None => {},
                                     Some(onefwd) => {
-                                        accum.push(onefwd);
-                                        if *row == vorigin && self.at(onefwd).is_none() {
-                                            match onefwd.plus(0, vdir) {
-                                                None => {},
-                                                Some(twofwd) => accum.push(twofwd),
+                                        if self.at(onefwd).is_none() {
+                                            accum.push(onefwd);
+                                            if *row == vorigin {
+                                                match onefwd.plus(0, vdir) {
+                                                    None => {},
+                                                    Some(twofwd) => accum.push(twofwd),
+                                                }
                                             }
                                         }
                                     }
@@ -763,7 +766,23 @@ pub mod games {
     }
 
     pub fn get_move(g: &chess::Game, inp: @Reader) -> ChessMove {
-        get_move_recur(g, inp)
+        match g.current {
+            chess::black => {
+                let mut i = g.all_moves_iter();
+                let mut m : ChessMove = i.next().unwrap();
+                loop {
+                    match i.next() {
+                        None => return m,
+                        Some(new) => {
+                            let b : bool = random();
+                            if b { return m; }
+                            m = new;
+                        }
+                    }
+                }
+            },
+            chess::white => { get_move_recur(g, inp) },
+        }
     }
 
     pub fn read_square(input: &str) -> Option<(char, char, uint)> {
