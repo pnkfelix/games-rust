@@ -162,9 +162,17 @@ pub mod games {
                 fmt!("%s", accum)
             }
 
-            pub fn cell<'a>(&'a mut self, s: Square) -> &'a mut Option<Man> {
+            pub fn cell<'a>(&'a self, s: Square) -> &'a Option<Man> {
+                &self.rows[s.number.magnitude()][s.letter.magnitude()]
+            }
+
+            pub fn cell_mut<'a>(&'a mut self, s: Square) -> &'a mut Option<Man> {
                 &mut self.rows[s.number.magnitude()][s.letter.magnitude()]
             }
+
+            pub fn at(&self, s: Square) -> Option<Man> { self.cell(s).clone() }
+            pub fn put(&mut self, s: Square, m: Man) {*self.cell_mut(s) = Some(m);}
+            pub fn clear(&mut self, s: Square) {*self.cell_mut(s) = None;}
         }
 
         pub type Move = (Square, Square);
@@ -205,8 +213,10 @@ pub mod games {
         impl Game {
             pub fn to_str(&self) -> ~str {
                 let ret = self.board.to_str();
-                let ret = ret.replace("8\n", fmt!("8 %s \n", pieces_to_str(black, self.black_taken)));
-                let ret = ret.replace("1\n", fmt!("1 %s \n", pieces_to_str(white, self.white_taken)));
+                let ret = ret.replace("8\n",
+                                      fmt!("8 %s \n", pieces_to_str(black, self.black_taken)));
+                let ret = ret.replace("1\n",
+                                      fmt!("1 %s \n", pieces_to_str(white, self.white_taken)));
                 let ret = ret + "\n" + self.current.to_str() + "'s move";
                 ret
             }
@@ -218,29 +228,41 @@ pub mod games {
                     invalid_move::cond.raise((reason, move, self.clone()))
                 };
 
+                macro_rules! retry(
+                    ($reason:expr) => { move = raise($reason); loop; }
+                );
+
+                macro_rules! retry2(
+                    ($d:ident, $reason:expr) => { $d = raise($reason); loop; }
+                );
+
                 loop {
                     let (from, to) = move;
 
                     if from == to {
-                        move = raise(source_and_target_are_same_square(from));
-                        loop;
+                        let r = source_and_target_are_same_square(from);
+                        // Neither of the below macros work.  It is not clear why.
+                        // (I can expose via the input sequence: "c2 c2", "c2 c3")
+                        // retry!(move, r)
+                        // retry2!(move, r)
+                        move = raise(r); loop;
                     }
 
                     let m = *self.board.cell(from);
 
-                    debug!("validate move %? : %?", move.to_str(), m);
+                    debug!("validate move %? : man %?", move.to_str(), m);
 
                     match m {
                         None => {
-                            move = raise(source_square_is_empty(from));
-                            loop;
+                            move = raise(source_square_is_empty(from)); loop;
                         }
                         Some(source_man @ Man(color, _)) => {
                             if self.current != color {
-                                move = raise(piece_is_not_your_color(source_man));
-                                loop;
+                                move = raise(piece_is_not_your_color(source_man)); loop;
                             }
 
+                            debug!("validate move %? : source %? to %?",
+                                   move.to_str(), source_man, to.to_str());
                             let target_man : Option<Man> =
                                 match *self.board.cell(to) {
                                 // empty target is a-okay
@@ -248,6 +270,7 @@ pub mod games {
                                     None
                                 },
                                 Some(man @ Man(color, _)) => {
+                                    debug!("validate move %? : target man %?", move.to_str(), man);
                                     if self.current == color {
                                         move = raise(target_square_holds_piece_of_your_color(man));
                                         loop;
@@ -256,9 +279,12 @@ pub mod games {
                                     }
                                 },
                             };
+
+                            // Okay. now everything has been checked.
                             return (move, source_man, target_man);
                         }
                     }
+                    fail!("should never get here"); // is there a static_fail?
                 }
             }
 
@@ -268,8 +294,8 @@ pub mod games {
                 let (move, source_man, target_man) = self.validate_move(move);
                 let (from, to) = move;
 
-                *self.board.cell(from) = None;
-                *self.board.cell(to) = Some(source_man);
+                self.board.clear(from);
+                self.board.put(to, source_man);
 
                 match target_man {
                     Some(Man(black, p)) => self.black_taken.push(p),
@@ -299,14 +325,15 @@ pub mod games {
         static bk : Man = Man(black, king);
 
         pub static initial_board : Board = Board {
-            rows: [[Some(wr), Some(wn), Some(wb), Some(wq), Some(wk), Some(wb), Some(wk), Some(wr)],
-                   [Some(wp), Some(wp), Some(wp), Some(wp), Some(wp), Some(wp), Some(wp), Some(wp)],
-                   [None,     None,     None,      None,     None,    None,     None,     None ],
-                   [None,     None,     None,      None,     None,    None,     None,     None ],
-                   [None,     None,     None,      None,     None,    None,     None,     None ],
-                   [None,     None,     None,      None,     None,    None,     None,     None ],
-                   [Some(bp), Some(bp), Some(bp), Some(bp), Some(bp), Some(bp), Some(bp), Some(bp)],
-                   [Some(br), Some(bn), Some(bb), Some(bq), Some(bk), Some(bb), Some(bk), Some(br)]],
+            rows:
+                [[Some(wr), Some(wn), Some(wb), Some(wq), Some(wk), Some(wb), Some(wk), Some(wr)],
+                 [Some(wp), Some(wp), Some(wp), Some(wp), Some(wp), Some(wp), Some(wp), Some(wp)],
+                 [None,     None,     None,      None,     None,    None,     None,     None    ],
+                 [None,     None,     None,      None,     None,    None,     None,     None    ],
+                 [None,     None,     None,      None,     None,    None,     None,     None    ],
+                 [None,     None,     None,      None,     None,    None,     None,     None    ],
+                 [Some(bp), Some(bp), Some(bp), Some(bp), Some(bp), Some(bp), Some(bp), Some(bp)],
+                 [Some(br), Some(bn), Some(bb), Some(bq), Some(bk), Some(bb), Some(bk), Some(br)]],
         };
     }
 
@@ -347,6 +374,25 @@ pub mod games {
         get_move_recur(g, inp)
     }
 
+    pub fn read_square(input: &str) -> Option<(char, char, uint)> {
+        let idx = input.find(|c| ('a' <= c && c <= 'h'));
+        debug!("read_square idx: %?", idx);
+        match idx {
+            None => None,
+            Some(idx) => {
+                if idx+1 >= input.char_len() {
+                    None
+                } else {
+                    let to_letter = input.char_at(idx);
+                    let to_number = input.char_at(idx+1);
+                    let val = (to_letter, to_number, idx+2);
+                    debug!("read_square val: %?", val);
+                    Some(val)
+                }
+            }
+        }
+    }
+
     pub fn parse_move(input: ~str) -> ChessMove {
         use games::chess::*;
 
@@ -354,37 +400,20 @@ pub mod games {
             return unreadable_move::cond.raise(input.clone())
         }
 
-        let from_idx = input.find(|c| ('a' <= c && c <= 'h'));
-
-        let (from_letter, from_number, post_idx) = match from_idx {
+        let (from_letter, from_number, post_idx) = match read_square(input) {
             None => return unreadable_move::cond.raise(input.clone()),
-            Some(to_idx) => {
-                if to_idx+1 >= input.char_len() {
-                    return unreadable_move::cond.raise(input.clone())
-                } else {
-                    let to_letter = input.char_at(to_idx);
-                    let to_number = input.char_at(to_idx+1);
-                    (to_letter, to_number, to_idx+2)
-                }
-            }
+            Some(t) => t
         };
 
         let from_letter = Col::from_char(from_letter);
         let from_number = Row::from_char(from_number);
 
         let rest = input.slice_from(post_idx);
-        let to_idx = rest.find(|c| ('a' <= c && c <= 'h'));
 
-        let (to_letter, to_number) = match to_idx {
+        let (to_letter, to_number, _) = match read_square(rest) {
             None => return unreadable_move::cond.raise(input.clone()),
-            Some(to_idx) => {
-                let to_letter = rest.char_at(to_idx);
-                let to_number = rest.char_at(to_idx+1);
-                (to_letter, to_number)
-            }
+            Some(t) => t
         };
-        debug!("to_idx %? to_letter %? to_number %?",
-               to_idx, to_letter, to_number);
 
         let to_letter = Col::from_char(to_letter);
         let to_number = Row::from_char(to_number);
