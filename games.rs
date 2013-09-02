@@ -411,7 +411,6 @@ pub mod games {
 
             pub fn do_move_without_validation(&mut self, (from, to): Move) {
                 let source_man = self.at(from).unwrap();
-                let target_man = self.at(to);
 
                 self.clear(from);
                 self.put(to, source_man);
@@ -569,10 +568,10 @@ pub mod games {
             }
         }
 
-        fn is_king_capturable<'r>(board: &'r Board, target: Color) -> Option<Square> {
+        fn king_capturable<'r>(board: &'r Board, target: Color) -> Option<Square> {
             for (from, to) in all_moves_iter_for(board, target.rev()) {
                 match board.at(to) {
-                    Some(Man(target, king)) => return Some(from),
+                    Some(Man(_, king)) => return Some(from),
                     _ => {}
                 }
             }
@@ -584,7 +583,7 @@ pub mod games {
                 for m in self.iter {
                     let mut b = self.iter.board.clone();
                     b.do_move_without_validation(m);
-                    if is_king_capturable(&b, self.iter.current).is_some() {
+                    if king_capturable(&b, self.iter.current).is_some() {
                         loop
                     } else {
                         return Some(m);
@@ -592,6 +591,11 @@ pub mod games {
                 }
                 None
             }
+        }
+
+        enum GameEnd {
+            CheckMateFor(Color),
+            StaleMate,
         }
 
         impl Game {
@@ -603,6 +607,31 @@ pub mod games {
                                       fmt!("1 %s \n", pieces_to_str(white, self.white_taken)));
                 let ret = ret + "\n" + self.current.to_str() + "'s move";
                 ret
+            }
+
+            pub fn is_check(&self) -> bool {
+                king_capturable(&self.board, self.current).is_some()
+            }
+
+            pub fn is_game_over(&self) -> Option<GameEnd> {
+                let current = self.current;
+                fn king_capturable_in_all_moves(g:&Game, current:Color) -> bool {
+                    do g.all_moves_iter().all |move| {
+                        let mut b = g.board.clone();
+                        b.do_move_without_validation(move);
+                        king_capturable(&b, current).is_some()
+                    }
+                }
+
+                if king_capturable_in_all_moves(self, current) {
+                    if king_capturable(&self.board, current).is_some() {
+                        Some(CheckMateFor(self.current.rev()))
+                    } else {
+                        Some(StaleMate)
+                    }
+                } else {
+                    None
+                }
             }
 
             pub fn all_moves_iter<'r>(&'r self) -> MovesFilterExposedKings<'r> {
@@ -766,7 +795,7 @@ pub mod games {
 
                             let mut b = self.board.clone();
                             b.do_move_without_validation(move);
-                            match is_king_capturable(&b, self.current) {
+                            match king_capturable(&b, self.current) {
                                 Some(s) => { move = raise(move_exposes_king(move, s)); loop },
                                 _ => {}
                             }
@@ -952,6 +981,14 @@ pub mod games {
         loop {
             println(fmt!("%s", b.to_str()));
 
+            match b.is_game_over() {
+                None => {},
+                Some(end) => { println(fmt!("%?", end)); break; }
+            }
+
+            if b.is_check() { println("Check"); }
+
+            print("moves: ");
             for m in b.all_moves_iter() {
                 let (from, to) = m;
                 print(fmt!("(%s, %s)", from.to_str(), to.to_str()));
