@@ -380,6 +380,15 @@ pub mod games {
             pub fn at(&self, s: Square) -> Option<Man> { self.cell(s).clone() }
             pub fn put(&mut self, s: Square, m: Man) {*self.cell_mut(s) = Some(m);}
             pub fn clear(&mut self, s: Square) {*self.cell_mut(s) = None;}
+
+            pub fn do_move_without_validation(&mut self, (from, to): Move) {
+                let source_man = self.at(from).unwrap();
+                let target_man = self.at(to);
+
+                self.clear(from);
+                self.put(to, source_man);
+            }
+
         }
 
         pub type Move = (Square, Square);
@@ -425,11 +434,19 @@ pub mod games {
             target: Option<Man>,
         }
 
+        // AllMovesIter includes moves that capture the king and
+        // *also* moves that leave the current player's king exposed
+        // to capture.  You need to do a post-psss over the reuslt to
+        // ensure that you have not put your own king into check.
         struct AllMovesIter<'self> {
             board: &'self Board,
             current: Color,
             rest_squares: OccupiedSquaresIter<'self>,
             curr_moves: Option<(Square, ~[Square], uint)>,
+        }
+
+        struct MovesFilterExposedKings<'self> {
+            iter: AllMovesIter<'self>,
         }
 
         impl<'self> Iterator<Move> for AllMovesIter<'self> {
@@ -493,6 +510,42 @@ pub mod games {
             }
         }
 
+        impl<'self> AllMovesIter<'self> {
+            fn filter_exposed_kings(self) -> MovesFilterExposedKings<'self> {
+                MovesFilterExposedKings {
+                    iter: self,
+                }
+            }
+        }
+
+        fn all_moves_iter_for<'r>(board: &'r Board, player: Color) -> AllMovesIter<'r> {
+            let squares = board.occupied_squares_iter(player);
+            AllMovesIter {
+                board: board, current: player, rest_squares: squares, curr_moves: None,
+            }
+        }
+
+        fn is_king_capturable<'r>(board: &'r Board, target: Color) -> bool {
+            do all_moves_iter_for(board, target.rev()).map(|(_from, to)|to).fold(false) |b, to| {
+                match board.at(to) { Some(Man(target, king)) => true, _ => false, }
+            }
+        }
+
+        impl<'self> Iterator<Move> for MovesFilterExposedKings<'self> {
+            fn next(&mut self) -> Option<Move> {
+                for m in self.iter {
+                    let mut b = self.iter.board.clone();
+                    b.do_move_without_validation(m);
+                    if is_king_capturable(&b, self.iter.current) {
+                        loop
+                    } else {
+                        return Some(m);
+                    }
+                }
+                None
+            }
+        }
+
         impl Game {
             pub fn to_str(&self) -> ~str {
                 let ret = self.board.to_str();
@@ -504,13 +557,8 @@ pub mod games {
                 ret
             }
 
-            pub fn all_moves_iter<'r>(&'r self) -> AllMovesIter<'r> {
-                AllMovesIter {
-                    board: &'self self.board,
-                    current: self.current,
-                    rest_squares: self.board.occupied_squares_iter(self.current),
-                    curr_moves: None,
-                }
+            pub fn all_moves_iter<'r>(&'r self) -> MovesFilterExposedKings<'r> {
+                all_moves_iter_for(&'r self.board, self.current).filter_exposed_kings()
             }
 
             pub fn is_illegal(&self, m: Man, from: Square, to: Square) -> Option<~str> {
@@ -680,17 +728,12 @@ pub mod games {
                 }
             }
 
-            pub fn do_move(&mut self, (from, to): Move) {
-                let mut move = (from, to);
-
+            pub fn do_move(&mut self, move: Move) {
                 let ElaboratedMove{
-                    move: move, source: source_man, target: target_man
+                    move: move, source: _, target: target_man
                 } = self.validate_move(move);
 
-                let (from, to) = move;
-
-                self.board.clear(from);
-                self.board.put(to, source_man);
+                self.board.do_move_without_validation(move);
 
                 match target_man {
                     Some(Man(black, p)) => self.black_taken.push(p),
