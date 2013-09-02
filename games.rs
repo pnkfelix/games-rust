@@ -952,39 +952,6 @@ pub mod games {
         loop {
             println(fmt!("%s", b.to_str()));
 
-/*
-
-There is a bug somewhere:
-8□■♝■□♝□■8 ♟♟♟♟♟♟♜♞♟♜♛♞♟ 
-7■□■□■□■□7
-6♙♙□■♚■□■6
-5■□■♖♙□♕□5
-4□■□■□■□■4
-3♗□♘□■♙♙□3
-2♙■□♙□■□■2
-1■♖■□♔♗■□1 ♙♘ 
- abcdefgh
-white's move
-(b1, a1)(b1, b2)(b1, b3)(b1, b4)(b1, b5)(b1, c1)(b1, d1)(e1, d1)(e1, e2)(e1, f2)(f1, e2)(f1, d3)(f1, c4)(f1, b5)(f1, g2)(f1, h3)(d2, d3)(d2, d4)(a3, b4)(a3, c5)(a3, d6)(a3, e7)(a3, f8)(a3, b2)(a3, c1)(c3, a4)(c3, b5)(c3, d1)(c3, e2)(c3, e4)(f3, f4)(g3, g4)(d5, c5)(d5, b5)(d5, a5)(d5, d4)(d5, d3)(d5, d6)(d5, d7)(d5, d8)(g5, f4)(g5, e3)(g5, f6)(g5, e7)(g5, d8)(g5, h6)(g5, h4)(g5, f5)(g5, g4)(g5, g6)(g5, g7)(g5, g8)(g5, h5)(a6, a7)(b6, b7)
-white's move? g5 g6
-
- abcdefgh
-8□■♝■□♝□■8 ♟♟♟♟♟♟♜♞♟♜♛♞♟ 
-7■□■□■□■□7
-6♙♙□■♚■♕■6
-5■□■♖♙□■□5
-4□■□■□■□■4
-3♗□♘□■♙♙□3
-2♙■□♙□■□■2
-1■♖■□♔♗■□1 ♙♘ 
- abcdefgh
-black's move
-
-task <unnamed> failed at 'called `Option::unwrap()` on a `None` value'
-
-*/
-
-
             for m in b.all_moves_iter() {
                 let (from, to) = m;
                 print(fmt!("(%s, %s)", from.to_str(), to.to_str()));
