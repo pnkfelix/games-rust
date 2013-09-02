@@ -1,7 +1,40 @@
+extern mod extra;
+use extra::getopts::*;
+
 use std::num::One;
 
+fn print_usage(program: &str, _opts: &[Opt]) {
+    printfln!("Usage: %s [options]", program);
+    println("--chess");
+    println("--antichess");
+    println("-h --help\tUsage");
+}
+
 fn main() {
-    games::antichess();
+    use std::os;
+
+    let opts = ~[optflag("chess"),
+                 optopt("antichess"),
+                 optflag("h"),
+                 optflag("help"),];
+    let args = os::args();
+    let program = args[0].clone();
+
+    let matches = match getopts(args.tail(), opts) {
+        Ok(m) => { m },
+        Err(f) => { fail!(fail_str(f)) }
+    };
+
+    if opt_present(&matches, "h") || opt_present(&matches, "help") {
+        print_usage(program, opts);
+        return;
+    }
+
+    if opt_present(&matches, "chess") {
+        games::chess();
+    } else {
+        games::antichess();
+    }
 }
 
  /// A range of numbers from [0, N)
@@ -88,6 +121,25 @@ pub mod games {
         impl Color {
             fn rev(self) -> Color {
                 match self { black => white, white => black }
+            }
+
+            fn pawn_vdir_and_vorigin(self) -> (int, uint) {
+                match self {
+                    white => (1,1),
+                    black => (-1,6)
+                }
+            }
+
+            fn pawn_home_row(self) -> Row {
+                let (vdir, vorigin) = self.pawn_vdir_and_vorigin();
+                Row(vorigin)
+            }
+
+            fn pawn_end_row(self) -> Row {
+                match self {
+                    white => Row(7),
+                    black => Row(0)
+                }
             }
         }
 
@@ -329,10 +381,7 @@ pub mod games {
                 let Square{ letter: _, number: row } = s;
 
                                 let mut accum = ~[];
-                                let (vdir, vorigin) = match color {
-                                    white => (1,1),
-                                    black => (-1,6)
-                                };
+                                let (vdir, vorigin) = color.pawn_vdir_and_vorigin();
 
                                 let onefwd = s.plus(0, vdir);
                                 match onefwd {
@@ -415,11 +464,17 @@ pub mod games {
             pub fn put(&mut self, s: Square, m: Man) {*self.cell_mut(s) = Some(m);}
             pub fn clear(&mut self, s: Square) {*self.cell_mut(s) = None;}
 
-            pub fn do_move_without_validation(&mut self, (from, to): Move) {
+            pub fn do_move_without_validation(&mut self, m: Move, on_promote: Option<Piece>) {
+                let (from, to) = m;
                 let source_man = self.at(from).unwrap();
 
+                let target_man = match source_man {
+                    Man(c, pawn) if to.number == c.pawn_end_row() => Man(c, on_promote.unwrap()),
+                    _ => source_man,
+                };
+
                 self.clear(from);
-                self.put(to, source_man);
+                self.put(to, target_man);
             }
 
         }
@@ -633,7 +688,7 @@ pub mod games {
                     }
 
                     let mut b = self.iter.board.clone();
-                    b.do_move_without_validation(m);
+                    b.do_move_without_validation(m, Some(queen));
                     if king_capturable(&b, self.iter.current).is_some() {
                         loop
                     } else {
@@ -697,7 +752,7 @@ pub mod games {
                 fn king_capturable_in_all_moves(g:&Game, current:Color) -> bool {
                     do g.all_moves_iter().all |move| {
                         let mut b = g.board.clone();
-                        b.do_move_without_validation(move);
+                        b.do_move_without_validation(move, Some(queen));
                         king_capturable(&b, current).is_some()
                     }
                 }
@@ -781,7 +836,7 @@ pub mod games {
                             (drow.abs() == 1 && dcol.abs() == 2)) { None }
                         else { Some(~"knights move by two and then by one") },
                     pawn   => {
-                        let (vdir, vorigin) = match color { white => (1,1), black => (-1,6) };
+                        let (vdir, vorigin) = color.pawn_vdir_and_vorigin();
                         debug!("is_illegal pawn vdir: %? vorigin: %? from.number: %? dcol: %? drow: %?",
                                vdir, vorigin, *from.number, dcol, drow);
                         if *from.number == vorigin && dcol == 0 && drow == vdir*2
@@ -919,7 +974,7 @@ pub mod games {
 
                             if self.king_has_royal_power() {
                                 let mut b = self.board.clone();
-                                b.do_move_without_validation(move);
+                                b.do_move_without_validation(move, Some(queen));
                                 match king_capturable(&b, self.current) {
                                     Some(s) => { move = raise(move_exposes_king(move, s)); loop },
                                     _ => {}
@@ -953,7 +1008,7 @@ pub mod games {
                     move: move, source: _, target: target_man
                 } = self.validate_move(move);
 
-                self.board.do_move_without_validation(move);
+                self.board.do_move_without_validation(move, Some(queen));
 
                 match target_man {
                     Some(Man(black, p)) => self.black_taken.push(p),
@@ -1102,17 +1157,34 @@ pub mod games {
         }
     }
 
+    pub fn chess() {
+        use games::chess::*;
+        let v = Variant{
+            pawn_promotion: ~[queen, rook, bishop, knight],
+            rules: NormalChess,
+        };
+
+        chess_game(v);
+    }
+
     pub fn antichess() {
+        use games::chess::*;
+        let v = Variant{
+            pawn_promotion: ~[queen, rook, bishop, knight],
+            rules: Antichess(AntichessVariants{
+                    fewer_pieces_wins_on_stalemate: false,
+                    king_has_royal_power: RoyalGettingCheckmatedLoses,
+                })};
+
+        chess_game(v);
+    }
+
+    pub fn chess_game(variant: chess::Variant) {
         use games::chess::*;
         use std::io;
 
         let mut b = Game {
-            variant: Variant{
-                pawn_promotion: ~[queen, rook, bishop, knight],
-                rules: Antichess(AntichessVariants{
-                        fewer_pieces_wins_on_stalemate: false,
-                        king_has_royal_power: RoyalGettingCheckmatedLoses,
-                    })},
+            variant: variant,
             board: chess::initial_board,
             current: white,
             black_taken: ~[], // ~[queen],
