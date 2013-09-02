@@ -155,11 +155,9 @@ pub mod games {
 
         impl<'self> Iterator<Square> for OccupiedSquaresIter<'self> {
             fn next(&mut self) -> Option<Square> {
-                let s = Square(self.col, self.row);
-                debug!("OccupiedSquaresIter next: %s", s.to_str());
                 loop {
                     let s = Square(self.col, self.row);
-                    debug!("OccupiedSquaresIter step: %s", s.to_str());
+                    // debug!("OccupiedSquaresIter step: %s", s.to_str());
                     if *self.row >= 8 {
                         return None;
                     } else if *self.col >= 8 {
@@ -184,6 +182,10 @@ pub mod games {
         impl Board {
             fn occupied_squares_iter<'a>(&'a self, color: Color) -> OccupiedSquaresIter<'a> {
                 OccupiedSquaresIter { board: self, row: Row(0), col: Col(0), color: color }
+            }
+
+            fn move_is_capturing(&self, (_, to): Move) -> bool {
+                self.at(to).is_some()
             }
         }
 
@@ -341,7 +343,11 @@ pub mod games {
                                             if *row == vorigin {
                                                 match onefwd.plus(0, vdir) {
                                                     None => {},
-                                                    Some(twofwd) => accum.push(twofwd),
+                                                    Some(twofwd) => {
+                                                        if self.at(twofwd).is_none() {
+                                                            accum.push(twofwd);
+                                                        }
+                                                    }
                                                 }
                                             }
                                         }
@@ -429,6 +435,7 @@ pub mod games {
             man_cannot_make_move(Man, Move, ~str),
             move_is_blocked_by(Move, Square),
             move_exposes_king(Move, Square),
+            move_is_noncapturing(Move, ~[Move]),
         }
 
         impl InvalidMoveReason {
@@ -445,11 +452,46 @@ pub mod games {
         }
 
         #[deriving(Clone)]
+        pub struct AntichessVariants {
+            fewer_pieces_wins_on_stalemate: bool,
+            king_has_royal_power: RoyalVariant,
+        }
+
+        #[deriving(Clone)]
+        pub enum RoyalVariant { NonRoyal, RoyalGettingCheckmatedWins, RoyalGettingCheckmatedLoses, }
+
+        #[deriving(Clone)]
+        pub enum RulesVariant { NormalChess, Antichess(AntichessVariants), }
+
+        #[deriving(Clone)]
+        pub struct Variant { pawn_promotion: ~[Piece], rules: RulesVariant, }
+
+        #[deriving(Clone)]
         struct Game {
+            variant: Variant,
             board: Board,
             current: Color,
             black_taken: ~[Piece],
-            white_taken: ~[Piece]
+            white_taken: ~[Piece],
+        }
+
+        impl RulesVariant {
+            fn king_has_royal_power(self) -> bool {
+                match self {
+                    NormalChess => true,
+                    Antichess(v) => v.king_has_royal_power.king_has_royal_power()
+                }
+            }
+        }
+
+        impl RoyalVariant {
+            fn king_has_royal_power(self) -> bool {
+                match self {
+                    NonRoyal => false,
+                    RoyalGettingCheckmatedLoses => true,
+                    RoyalGettingCheckmatedWins => true,
+                }
+            }
         }
 
         pub fn pieces_to_str(c: Color, v: &[Piece]) -> ~str {
@@ -473,8 +515,11 @@ pub mod games {
             curr_moves: Option<(Square, ~[Square], uint)>,
         }
 
-        struct MovesFilterExposedKings<'self> {
+        enum CapturingFilter { IgnoreCapturing, CapturingOnly, NoncapturingOnly, }
+
+        struct MovesFilterLegality<'self> {
             iter: AllMovesIter<'self>,
+            capturing_filter: CapturingFilter,
         }
 
         impl<'self> Iterator<Move> for AllMovesIter<'self> {
@@ -527,7 +572,7 @@ pub mod games {
                             None => Finished
                         }
                     };
-                    debug!("AllMovesIter step: %s", step.to_str());
+                    // debug!("AllMovesIter step: %s", step.to_str());
                     match step {
                         Yielding(j, m)     => {
                             match curr_moves {
@@ -554,9 +599,9 @@ pub mod games {
         }
 
         impl<'self> AllMovesIter<'self> {
-            fn filter_exposed_kings(self) -> MovesFilterExposedKings<'self> {
-                MovesFilterExposedKings {
-                    iter: self,
+            fn filter_exposed_kings(self, f: CapturingFilter) -> MovesFilterLegality<'self> {
+                MovesFilterLegality {
+                    iter: self, capturing_filter: f,
                 }
             }
         }
@@ -578,9 +623,15 @@ pub mod games {
             return None;
         }
 
-        impl<'self> Iterator<Move> for MovesFilterExposedKings<'self> {
+        impl<'self> Iterator<Move> for MovesFilterLegality<'self> {
             fn next(&mut self) -> Option<Move> {
                 for m in self.iter {
+                    match self.capturing_filter {
+                        CapturingOnly if ! self.iter.board.move_is_capturing(m) => loop,
+                        NoncapturingOnly if self.iter.board.move_is_capturing(m) => loop,
+                        _ => {},
+                    }
+
                     let mut b = self.iter.board.clone();
                     b.do_move_without_validation(m);
                     if king_capturable(&b, self.iter.current).is_some() {
@@ -596,6 +647,8 @@ pub mod games {
         enum GameEnd {
             CheckMateFor(Color),
             StaleMate,
+            AllPiecesGone,
+            AllPiecesButKingGone,
         }
 
         impl Game {
@@ -613,6 +666,32 @@ pub mod games {
                 king_capturable(&self.board, self.current).is_some()
             }
 
+            pub fn king_has_royal_power(&self) -> bool {
+                self.variant.rules.king_has_royal_power()
+            }
+
+            pub fn is_capturing_compulsory(&self) -> bool {
+                match self.variant.rules {
+                    NormalChess => false,
+                    Antichess(_) => true,
+                }
+            }
+
+            pub fn all_pieces_gone(&self) -> bool {
+                self.board.occupied_squares_iter(self.current).next().is_none()
+            }
+
+            pub fn all_pieces_but_king_gone(&self) -> bool {
+                let mut i = self.board.occupied_squares_iter(self.current);
+                match i.next() {
+                    None => false,
+                    Some(s) => i.next().is_none() && match self.board.at(s).unwrap() {
+                        Man(_, king) => true,
+                        Man(_, _) => false,
+                    }
+                }
+            }
+
             pub fn is_game_over(&self) -> Option<GameEnd> {
                 let current = self.current;
                 fn king_capturable_in_all_moves(g:&Game, current:Color) -> bool {
@@ -623,27 +702,71 @@ pub mod games {
                     }
                 }
 
-                if king_capturable_in_all_moves(self, current) {
+                if self.king_has_royal_power() &&
+                    king_capturable_in_all_moves(self, current) {
                     if king_capturable(&self.board, current).is_some() {
                         Some(CheckMateFor(self.current.rev()))
                     } else {
                         Some(StaleMate)
                     }
                 } else {
-                    None
+                    match self.variant.rules {
+                        NormalChess => None,
+                        Antichess(v) => match v.king_has_royal_power {
+                            NonRoyal => if self.all_pieces_gone() {
+                                Some(AllPiecesGone)
+                            } else {
+                                None
+                            },
+                            RoyalGettingCheckmatedWins | RoyalGettingCheckmatedLoses =>
+                                if self.all_pieces_but_king_gone() {
+                                Some(AllPiecesButKingGone)
+                            } else {
+                                None
+                            }
+                        }
+                    }
                 }
             }
 
-            pub fn all_moves_iter<'r>(&'r self) -> MovesFilterExposedKings<'r> {
-                all_moves_iter_for(&'r self.board, self.current).filter_exposed_kings()
+            fn all_moves_iter_core<'r>(&'r self, f:CapturingFilter) -> MovesFilterLegality<'r> {
+                all_moves_iter_for(&'r self.board, self.current).filter_exposed_kings(f)
+            }
+
+            pub fn capturing_moves_iter<'r>(&'r self) -> MovesFilterLegality<'r> {
+                self.all_moves_iter_core(CapturingOnly)
+            }
+
+            pub fn noncapturing_moves_iter<'r>(&'r self) -> MovesFilterLegality<'r> {
+                self.all_moves_iter_core(NoncapturingOnly)
+            }
+
+            pub fn all_moves_iter<'r>(&'r self) -> MovesFilterLegality<'r> {
+                self.all_moves_iter_core(IgnoreCapturing)
+            }
+
+            pub fn moves_iter<'r>(&'r self) -> MovesFilterLegality<'r> {
+                match self.variant.rules {
+                    NormalChess => self.all_moves_iter(),
+                    Antichess(_) => {
+                        if self.capturing_moves_iter().next().is_none() {
+                            self.noncapturing_moves_iter()
+                        } else {
+                            self.capturing_moves_iter()
+                        }
+                    }
+                }
             }
 
             pub fn is_illegal(&self, m: Man, from: Square, to: Square) -> Option<~str> {
-                if from == to { return None; } // Redundantly checking that move is non-trival.
+                // Redundantly checking that move is non-trival.
+                if from == to { return Some(~"cannot make trivial move"); }
+
                 let Man(color, p) = m;
                 let dsquare = to.delta_from(from);
                 let DSquare{ dcol: dcol, drow: drow } = dsquare;
-                debug!("is_illegal m: %? (from, to): %? dsquare: %?", m, (from,to), dsquare);
+                debug!("is_illegal m: %s (from, to): %s dsquare: %?",
+                       m.to_str(), (from,to).to_str(), dsquare);
                 match p {
                     king   => if dcol.abs() <= 1 && drow.abs() <= 1 { None }
                         else { Some(~"kings can only move one spot") },
@@ -659,7 +782,8 @@ pub mod games {
                         else { Some(~"knights move by two and then by one") },
                     pawn   => {
                         let (vdir, vorigin) = match color { white => (1,1), black => (-1,6) };
-
+                        debug!("is_illegal pawn vdir: %? vorigin: %? from.number: %? dcol: %? drow: %?",
+                               vdir, vorigin, *from.number, dcol, drow);
                         if *from.number == vorigin && dcol == 0 && drow == vdir*2
                             && self.board.at(to).is_none() {
                             None // foward by two from home row
@@ -676,7 +800,7 @@ pub mod games {
                         } else if (*from.number == vorigin && dcol == 0 && drow.abs() > 2) {
                             Some(fmt!("Pawn in home row move forward by one or two spaces, not %d",
                                       drow))
-                        } else if drow != vdir {
+                        } else if *from.number != vorigin && drow != vdir {
                             Some(fmt!("Pawn outside home row move forward by one space, not %d",
                                       drow))
                         } else if self.board.at(to).is_some() && dcol == 0 {
@@ -793,11 +917,23 @@ pub mod games {
                                 },
                             };
 
-                            let mut b = self.board.clone();
-                            b.do_move_without_validation(move);
-                            match king_capturable(&b, self.current) {
-                                Some(s) => { move = raise(move_exposes_king(move, s)); loop },
-                                _ => {}
+                            if self.king_has_royal_power() {
+                                let mut b = self.board.clone();
+                                b.do_move_without_validation(move);
+                                match king_capturable(&b, self.current) {
+                                    Some(s) => { move = raise(move_exposes_king(move, s)); loop },
+                                    _ => {}
+                                }
+                            }
+
+                            if self.is_capturing_compulsory() && target_man.is_none() {
+                                // confirm that no capturing move exists.
+                                let capturing_moves : ~[Move] =
+                                    self.capturing_moves_iter().collect();
+                                if capturing_moves.len() > 0 {
+                                    let exn = move_is_noncapturing(move, capturing_moves);
+                                    move = raise(exn); loop;
+                                }
                             }
 
                             // Okay. now everything has been checked.
@@ -896,7 +1032,7 @@ pub mod games {
     pub fn get_move(g: &chess::Game, inp: @Reader) -> ChessMove {
         match g.current {
             chess::black => {
-                let mut i = g.all_moves_iter();
+                let mut i = g.moves_iter();
                 let mut m : ChessMove = i.next().unwrap();
                 loop {
                     match i.next() {
@@ -971,6 +1107,12 @@ pub mod games {
         use std::io;
 
         let mut b = Game {
+            variant: Variant{
+                pawn_promotion: ~[queen, rook, bishop, knight],
+                rules: Antichess(AntichessVariants{
+                        fewer_pieces_wins_on_stalemate: false,
+                        king_has_royal_power: RoyalGettingCheckmatedLoses,
+                    })},
             board: chess::initial_board,
             current: white,
             black_taken: ~[], // ~[queen],
@@ -989,7 +1131,7 @@ pub mod games {
             if b.is_check() { println("Check"); }
 
             print("moves: ");
-            for m in b.all_moves_iter() {
+            for m in b.moves_iter() {
                 let (from, to) = m;
                 print(fmt!("(%s, %s)", from.to_str(), to.to_str()));
             }
