@@ -509,11 +509,7 @@ pub mod games {
                 }
             }
 
-            // XXX bleah, I would prefer to pass &self here, not &mut self, but this is
-            // intended to be called from validate_move.  (Which, come to think of it,
-            // might also take &self instead of &mut self?)  Still, it seems like I keep
-            // encountering motivations for &const self or some such.
-            pub fn is_illegal(&mut self, m: Man, from: Square, to: Square) -> Option<~str> {
+            pub fn is_illegal(&self, m: Man, from: Square, to: Square) -> Option<~str> {
                 if from == to { return None; } // Redundantly checking that move is non-trival.
                 let Man(color, p) = m;
                 let dsquare = to.delta_from(from);
@@ -563,7 +559,7 @@ pub mod games {
                 }
             }
 
-            pub fn find_occupied_between(&mut self, from: Square, to: Square) -> Option<Square> {
+            pub fn find_occupied_between(&self, from: Square, to: Square) -> Option<Square> {
                 fn signum(from:uint, to:uint) -> int {
                     if to > from { 1 } else if to == from { 0 } else { -1 }
                 }
@@ -587,7 +583,7 @@ pub mod games {
                 }
             }
 
-            pub fn check_for_blockage(&mut self, m: Man, from: Square, to: Square)
+            pub fn check_for_blockage(&self, m: Man, from: Square, to: Square)
                 -> Option<Square> {
                 let Man(_, p) = m;
                 match p {
@@ -596,7 +592,7 @@ pub mod games {
                 }
             }
 
-            pub fn validate_move(&mut self, move: Move) -> ElaboratedMove {
+            pub fn validate_move(&self, move: Move) -> ElaboratedMove {
                 let mut move = move;
 
                 let raise = |reason| {
