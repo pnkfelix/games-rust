@@ -79,6 +79,8 @@ pub mod games {
     pub mod chess {
         use std::util;
         use super::offset_range;
+        use N = std::option::None;
+        use S = std::option::Some;
 
         #[deriving(ToStr,Clone,Eq)]
         pub enum Color { black, white }
@@ -719,14 +721,14 @@ pub mod games {
 
         pub static initial_board : Board = Board {
             rows:
-                [[Some(wr), Some(wn), Some(wb), Some(wq), Some(wk), Some(wb), Some(wn), Some(wr)],
-                 [Some(wp), Some(wp), Some(wp), Some(wp), Some(wp), Some(wp), Some(wp), Some(wp)],
-                 [None,     None,     None,      None,     None,    None,     None,     None    ],
-                 [None,     None,     None,      None,     None,    None,     None,     None    ],
-                 [None,     None,     None,      None,     None,    None,     None,     None    ],
-                 [None,     None,     None,      None,     None,    None,     None,     None    ],
-                 [Some(bp), Some(bp), Some(bp), Some(bp), Some(bp), Some(bp), Some(bp), Some(bp)],
-                 [Some(br), Some(bn), Some(bb), Some(bq), Some(bk), Some(bb), Some(bn), Some(br)]],
+                [[S(wr), S(wn), S(wb), S(wq), S(wk), S(wb), S(wn), S(wr)],
+                 [S(wp), S(wp), S(wp), S(wp), S(wp), S(wp), S(wp), S(wp)],
+                 [N,     N,     N,     N,     N,     N,     N,     N    ],
+                 [N,     N,     N,     N,     N,     N,     N,     N    ],
+                 [N,     N,     N,     N,     N,     N,     N,     N    ],
+                 [N,     N,     N,     N,     N,     N,     N,     N    ],
+                 [S(bp), S(bp), S(bp), S(bp), S(bp), S(bp), S(bp), S(bp)],
+                 [S(br), S(bn), S(bb), S(bq), S(bk), S(bb), S(bn), S(br)]],
         };
     }
 
