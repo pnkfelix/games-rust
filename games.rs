@@ -907,11 +907,50 @@ pub mod games {
         let inp = io::stdin();
         loop {
             println(fmt!("%s", b.to_str()));
+
+/*
+
+There is a bug somewhere: I got this interaction.
+Note that the listed choices for white's move were
+just {(e1,d1),(e1,d2)}, but there was another move,
+namely (c1,d2), which was indeed accepted.
+
+8♕♞♝♛♚♝♞♜8 ♟♜ 
+7■□♟♟♟♟♟♟7
+6□■□■□■□■6
+5■□■□■□■□5
+4□■□■□■□■4
+3■□■♘■□■□3
+2♙♙□♟♙♙♙♙2
+1♖□♗□♔♗♘♖1 ♙♙ 
+ abcdefgh
+white's move
+(e1, d1)(e1, d2)
+white's move? c1 d2
+
+ abcdefgh
+8♕♞♝♛♚♝♞♜8 ♟♜♟ 
+7■□♟♟♟♟♟♟7
+6□■□■□■□■6
+5■□■□■□■□5
+4□■□■□■□■4
+3■□■♘■□■□3
+2♙♙□♗♙♙♙♙2
+1♖□■□♔♗♘♖1 ♙♙ 
+ abcdefgh
+
+
+*/
+
+
             for m in b.all_moves_iter() {
                 let (from, to) = m;
                 print(fmt!("(%s, %s)", from.to_str(), to.to_str()));
             }
             println("");
+
+
+
             let (from, to) = get_move(&b, inp);
             do invalid_move::cond.trap(|(r, m, b)| {
                     let m : Move = m;
