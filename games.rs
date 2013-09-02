@@ -240,8 +240,8 @@ pub mod games {
             }
         }
 
-        impl Board {
-            pub fn to_str(&self) -> ~str {
+        impl ToStr for Board {
+            fn to_str(&self) -> ~str {
                 let mut accum = ~" abcdefgh\n";
                 let mut count = 8;
                 for row in self.rows.rev_iter() {
@@ -264,7 +264,9 @@ pub mod games {
                 accum = accum + " abcdefgh";
                 fmt!("%s", accum)
             }
+        }
 
+        impl Board {
             pub fn radiate(&self, s:Square, units:~[(int,int)]) -> ~[Square] {
                 let mut accum = ~[];
                 for v in units.iter() {
