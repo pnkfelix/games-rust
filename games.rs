@@ -401,6 +401,7 @@ pub mod games {
             target_square_holds_piece_of_your_color(Man),
             man_cannot_make_move(Man, Move, ~str),
             move_is_blocked_by(Move, Square),
+            move_exposes_king(Move, Square),
         }
 
         impl InvalidMoveReason {
@@ -525,10 +526,14 @@ pub mod games {
             }
         }
 
-        fn is_king_capturable<'r>(board: &'r Board, target: Color) -> bool {
-            do all_moves_iter_for(board, target.rev()).map(|(_from, to)|to).fold(false) |b, to| {
-                match board.at(to) { Some(Man(target, king)) => true, _ => false, }
+        fn is_king_capturable<'r>(board: &'r Board, target: Color) -> Option<Square> {
+            for (from, to) in all_moves_iter_for(board, target.rev()) {
+                match board.at(to) {
+                    Some(Man(target, king)) => return Some(from),
+                    _ => {}
+                }
             }
+            return None;
         }
 
         impl<'self> Iterator<Move> for MovesFilterExposedKings<'self> {
@@ -536,7 +541,7 @@ pub mod games {
                 for m in self.iter {
                     let mut b = self.iter.board.clone();
                     b.do_move_without_validation(m);
-                    if is_king_capturable(&b, self.iter.current) {
+                    if is_king_capturable(&b, self.iter.current).is_some() {
                         loop
                     } else {
                         return Some(m);
@@ -715,6 +720,13 @@ pub mod games {
                                     }
                                 },
                             };
+
+                            let mut b = self.board.clone();
+                            b.do_move_without_validation(move);
+                            match is_king_capturable(&b, self.current) {
+                                Some(s) => { move = raise(move_exposes_king(move, s)); loop },
+                                _ => {}
+                            }
 
                             // Okay. now everything has been checked.
                             return ElaboratedMove {
