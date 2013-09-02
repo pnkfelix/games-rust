@@ -155,9 +155,11 @@ pub mod games {
 
         impl<'self> Iterator<Square> for OccupiedSquaresIter<'self> {
             fn next(&mut self) -> Option<Square> {
-                debug!("OccupiedSquaresIter next: %?", (self.row, self.col));
+                let s = Square(self.col, self.row);
+                debug!("OccupiedSquaresIter next: %s", s.to_str());
                 loop {
-                    debug!("OccupiedSquaresIter step: %?", (self.row, self.col));
+                    let s = Square(self.col, self.row);
+                    debug!("OccupiedSquaresIter step: %s", s.to_str());
                     if *self.row >= 8 {
                         return None;
                     } else if *self.col >= 8 {
@@ -165,7 +167,6 @@ pub mod games {
                         *self.col = 0;
                         loop;
                     } else {
-                        let s = Square { letter: self.col, number: self.row };
                         *self.col = *self.col + 1;
                         match self.board.at(s) {
                             None           => loop,
@@ -192,12 +193,24 @@ pub mod games {
         #[deriving(Eq)]
         pub struct Col(uint);
 
+        impl ToStr for Row {
+            fn to_str(&self) -> ~str {
+                ('1' as uint + **self).to_str()
+            }
+        }
+
         impl Row {
             fn maybe(mag:Option<uint>) -> Option<Row> {mag.map(|m| { Row(*m) })}
             pub fn from_char(c:char) -> Option<Row> {
                 Row::maybe(offset_range('1', '8').inject(c).map(|x|x.magnitude()))
             }
             fn magnitude(&self) -> uint { **self }
+        }
+
+        impl ToStr for Col {
+            fn to_str(&self) -> ~str {
+                ('a' as uint + **self).to_str()
+            }
         }
 
         impl Col {
@@ -213,6 +226,10 @@ pub mod games {
 
         #[deriving(Eq)]
         pub struct Square { letter: Col, number: Row }
+
+        fn Square(letter: Col, number: Row) -> Square {
+            Square{ letter: letter, number: number }
+        }
 
         pub struct DSquare { dcol: int, drow: int }
         impl Square {
@@ -283,6 +300,7 @@ pub mod games {
                                     cursor = s;
                                     loop;
                                 } else {
+                                    accum.push(s);
                                     break;
                                 }
                             },
@@ -305,26 +323,9 @@ pub mod games {
                                   (-1,0), (0,-1), (0,1), (1,0)])
             }
 
-            pub fn get_moves(&self, s:Square) -> ~[Square] {
-                fn flatten(vec: ~[Option<Square>]) -> ~[Square] {
-                    vec.flat_map(|x|match *x { None => ~[], Some(o) => ~[o] })
-                }
+            fn get_moves_for_pawn(&self, s:Square, color:Color) -> ~[Square] {
                 let Square{ letter: _, number: row } = s;
-                match self.at(s) {
-                    None => ~[],
-                    Some(Man(color, piece)) => {
-                        match piece {
-                            king   => flatten(~[s.plus(-1,-1), s.plus(-1,0), s.plus(-1,1),
-                                                s.plus( 0,-1),               s.plus( 0,1),
-                                                s.plus( 1,-1), s.plus( 1,0), s.plus( 1,1)]),
-                            queen  => self.radiate_eightway(s),
-                            rook   => self.radiate_linear(s),
-                            bishop => self.radiate_diagonal(s),
-                            knight => flatten(~[s.plus(-2,-1), s.plus(-2, 1),
-                                                s.plus(-1,-2), s.plus(-1, 2),
-                                                s.plus( 1,-2), s.plus( 1, 2),
-                                                s.plus( 2,-1), s.plus( 2, 1)]),
-                            pawn   => {
+
                                 let mut accum = ~[];
                                 let (vdir, vorigin) = match color {
                                     white => (1,1),
@@ -363,8 +364,35 @@ pub mod games {
                                     }
                                 }
                                 accum
+            }
+
+            pub fn get_moves(&self, s:Square) -> ~[Square] {
+                fn flatten(vec: ~[Option<Square>]) -> ~[Square] {
+                    vec.flat_map(|x|match *x { None => ~[], Some(o) => ~[o] })
+                }
+                match self.at(s) {
+                    None => ~[],
+                    Some(Man(color, piece)) => {
+                        let mut blind_moves = match piece {
+                            king   => flatten(~[s.plus(-1,-1), s.plus(-1,0), s.plus(-1,1),
+                                                s.plus( 0,-1),               s.plus( 0,1),
+                                                s.plus( 1,-1), s.plus( 1,0), s.plus( 1,1)]),
+                            queen  => self.radiate_eightway(s),
+                            rook   => self.radiate_linear(s),
+                            bishop => self.radiate_diagonal(s),
+                            knight => flatten(~[s.plus(-2,-1), s.plus(-2, 1),
+                                                s.plus(-1,-2), s.plus(-1, 2),
+                                                s.plus( 1,-2), s.plus( 1, 2),
+                                                s.plus( 2,-1), s.plus( 2, 1)]),
+                            pawn   => self.get_moves_for_pawn(s, color)
+                        };
+                        do blind_moves.retain |to| {
+                            match self.at(*to) {
+                                None => true,
+                                Some(Man(to_color, _)) => color.rev() == to_color
                             }
                         }
+                        blind_moves
                     }
                 }
             }
@@ -452,7 +480,8 @@ pub mod games {
 
         impl<'self> Iterator<Move> for AllMovesIter<'self> {
             fn next(&mut self) -> Option<Move> {
-                debug!("AllMovesIter next: %?", self);
+                // debug!("AllMovesIter next: %?", self);
+
                 enum Step {
                     Yielding(uint, Move),
                     LoopNextSquare,
@@ -460,6 +489,20 @@ pub mod games {
                     LoopNewVec(Square, ~[Square]),
                     Finished
                 }
+
+                impl ToStr for Step {
+                    fn to_str(&self) -> ~str {
+                        match *self {
+                            Yielding(n, m)    => fmt!("Yielding(%u, %s)", n, m.to_str()),
+                            LoopNextSquare    => fmt!("LoopNextSquare"),
+                            LoopNewIndex(n)   => fmt!("LoopNewIndex(%u)", n),
+                            LoopNewVec(ref s, ref ss) =>
+                                fmt!("LoopNewVec(%s, %s)", s.to_str(), ss.to_str()),
+                            Finished          => fmt!("Finished")
+                        }
+                    }
+                }
+
                 let mut curr_moves = None;
                 util::swap(&mut self.curr_moves, &mut curr_moves);
 
@@ -485,7 +528,7 @@ pub mod games {
                             None => Finished
                         }
                     };
-                    debug!("AllMovesIter step: %?", step);
+                    debug!("AllMovesIter step: %s", step.to_str());
                     match step {
                         Yielding(j, m)     => {
                             match curr_moves {
@@ -776,14 +819,15 @@ pub mod games {
 
         pub static initial_board : Board = Board {
             rows:
-                [[S(wr), S(wn), S(wb), S(wq), S(wk), S(wb), S(wn), S(wr)],
-                 [S(wp), S(wp), S(wp), S(wp), S(wp), S(wp), S(wp), S(wp)],
-                 [N,     N,     N,     N,     N,     N,     N,     N    ],
-                 [N,     N,     N,     N,     N,     N,     N,     N    ],
-                 [N,     N,     N,     N,     N,     N,     N,     N    ],
-                 [N,     N,     N,     N,     N,     N,     N,     N    ],
-                 [S(bp), S(bp), S(bp), S(bp), S(bp), S(bp), S(bp), S(bp)],
-                 [S(br), S(bn), S(bb), S(bq), S(bk), S(bb), S(bn), S(br)]],
+                //a      b      c      d      e      f      g      h
+                [[S(wr), S(wn), S(wb), S(wq), S(wk), S(wb), S(wn), S(wr)], //1
+                 [S(wp), S(wp), S(wp), S(wp), S(wp), S(wp), S(wp), S(wp)], //2
+                 [N,     N,     N,     N,     N,     N,     N,     N    ], //3
+                 [N,     N,     N,     N,     N,     N,     N,     N    ], //4
+                 [N,     N,     N,     N,     N,     N,     N,     N    ], //5
+                 [N,     N,     N,     N,     N,     N,     N,     N    ], //6
+                 [S(bp), S(bp), S(bp), S(bp), S(bp), S(bp), S(bp), S(bp)], //7
+                 [S(br), S(bn), S(bb), S(bq), S(bk), S(bb), S(bn), S(br)]],//8
         };
     }
 
@@ -910,35 +954,33 @@ pub mod games {
 
 /*
 
-There is a bug somewhere: I got this interaction.
-Note that the listed choices for white's move were
-just {(e1,d1),(e1,d2)}, but there was another move,
-namely (c1,d2), which was indeed accepted.
-
-8♕♞♝♛♚♝♞♜8 ♟♜ 
-7■□♟♟♟♟♟♟7
-6□■□■□■□■6
-5■□■□■□■□5
+There is a bug somewhere:
+8□■♝■□♝□■8 ♟♟♟♟♟♟♜♞♟♜♛♞♟ 
+7■□■□■□■□7
+6♙♙□■♚■□■6
+5■□■♖♙□♕□5
 4□■□■□■□■4
-3■□■♘■□■□3
-2♙♙□♟♙♙♙♙2
-1♖□♗□♔♗♘♖1 ♙♙ 
+3♗□♘□■♙♙□3
+2♙■□♙□■□■2
+1■♖■□♔♗■□1 ♙♘ 
  abcdefgh
 white's move
-(e1, d1)(e1, d2)
-white's move? c1 d2
+(b1, a1)(b1, b2)(b1, b3)(b1, b4)(b1, b5)(b1, c1)(b1, d1)(e1, d1)(e1, e2)(e1, f2)(f1, e2)(f1, d3)(f1, c4)(f1, b5)(f1, g2)(f1, h3)(d2, d3)(d2, d4)(a3, b4)(a3, c5)(a3, d6)(a3, e7)(a3, f8)(a3, b2)(a3, c1)(c3, a4)(c3, b5)(c3, d1)(c3, e2)(c3, e4)(f3, f4)(g3, g4)(d5, c5)(d5, b5)(d5, a5)(d5, d4)(d5, d3)(d5, d6)(d5, d7)(d5, d8)(g5, f4)(g5, e3)(g5, f6)(g5, e7)(g5, d8)(g5, h6)(g5, h4)(g5, f5)(g5, g4)(g5, g6)(g5, g7)(g5, g8)(g5, h5)(a6, a7)(b6, b7)
+white's move? g5 g6
 
  abcdefgh
-8♕♞♝♛♚♝♞♜8 ♟♜♟ 
-7■□♟♟♟♟♟♟7
-6□■□■□■□■6
-5■□■□■□■□5
+8□■♝■□♝□■8 ♟♟♟♟♟♟♜♞♟♜♛♞♟ 
+7■□■□■□■□7
+6♙♙□■♚■♕■6
+5■□■♖♙□■□5
 4□■□■□■□■4
-3■□■♘■□■□3
-2♙♙□♗♙♙♙♙2
-1♖□■□♔♗♘♖1 ♙♙ 
+3♗□♘□■♙♙□3
+2♙■□♙□■□■2
+1■♖■□♔♗■□1 ♙♘ 
  abcdefgh
+black's move
 
+task <unnamed> failed at 'called `Option::unwrap()` on a `None` value'
 
 */
 
@@ -956,7 +998,7 @@ white's move? c1 d2
                     let m : Move = m;
                     print(fmt!("invalid move: %s because %s\n",
                                m.to_str(), r.reason()));
-                    print("try again");
+                    print("try again, ");
                     get_move(&b, inp)
                 }).inside {
                 b.do_move((from, to));
