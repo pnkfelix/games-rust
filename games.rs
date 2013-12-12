@@ -1042,32 +1042,35 @@ pub mod games {
         };
     }
 
-    condition! {
-        pub no_input_move_provided : () -> super::chess::Move;
-    }
-
     type ChessMove = chess::Move;
     type retry<'a, BUF> = 'a |input: ~str, p: &mut MoveReader<'a, BUF>| -> ChessMove;
+
+    type no_input<'a, BUF> = 'a |&mut MoveReader<'a, BUF>| -> ChessMove;
 
     struct Retry<'a, BUF> {
         attempts_since_success: u32,
         call: retry<'a, BUF>,
+        no_input: no_input<'a, BUF>,
     }
 
     impl<'a, BUF:Buffer> Retry<'a, BUF> {
-        fn new(call: retry<'a, BUF>) -> Retry<'a, BUF> {
-            Retry { attempts_since_success: 0, call: call }
+        fn new(call: retry<'a, BUF>, no_input: no_input<'a, BUF>) -> Retry<'a, BUF> {
+            Retry { attempts_since_success: 0, call: call, no_input: no_input }
         }
     }
 
     struct MoveReader<'a, BUF> {
-        reparse: Retry<'a, BUF>
+        reparse: Retry<'a, BUF>,
     }
 
     impl<'a, BUF:Buffer> MoveReader<'a, BUF> {
         fn reparse(&mut self, input: ~str) -> ChessMove {
             self.reparse.attempts_since_success += 1;
             (self.reparse.call)(input, self)
+        }
+        fn no_input(&mut self) -> ChessMove {
+            self.reparse.attempts_since_success += 1;
+            (self.reparse.no_input)(self)
         }
     }
     pub fn get_move_recur<BUF:Buffer>(g: &chess::Game, inp: &mut BUF) -> ChessMove {
@@ -1092,7 +1095,12 @@ pub mod games {
             p.get_move_recur(g, inp)
         };
 
-        let mut p = MoveReader { reparse: Retry::new(retry) };
+        let fail_on_no_input = |p: &mut MoveReader<BUF>| {
+            fail!("Attempt {}: no input provided, failing",
+                  p.reparse.attempts_since_success);
+        };
+
+        let mut p = MoveReader { reparse: Retry::new(retry, fail_on_no_input) };
         p.get_move_recur(g, inp)
     }
 
@@ -1150,7 +1158,7 @@ pub mod games {
     pub fn parse_opt_move(&mut self, input: Option<~str>) -> ChessMove {
         let ret = match input {
             Some(s) => self.parse_move(s),
-            None    => no_input_move_provided::cond.raise(()),
+            None    => self.no_input(),
         };
         self.reparse.attempts_since_success = 0;
         ret
