@@ -130,11 +130,6 @@ pub mod games {
                 }
             }
 
-            fn pawn_home_row(self) -> Row {
-                let (_vdir, vorigin) = self.pawn_vdir_and_vorigin();
-                Row(vorigin)
-            }
-
             fn pawn_end_row(self) -> Row {
                 match self {
                     white => Row(7),
@@ -287,9 +282,6 @@ pub mod games {
 
         pub struct DSquare { dcol: int, drow: int }
         impl Square {
-            fn delta_to(&self, s: Square) -> DSquare {
-                DSquare{ dcol: s.letter - self.letter, drow: s.number - self.number }
-            }
             fn delta_from(&self, s: Square) -> DSquare {
                 DSquare{ dcol: self.letter - s.letter, drow: self.number - s.number }
             }
@@ -999,7 +991,6 @@ pub mod games {
                             };
                         }
                     }
-                    fail!("should never get here"); // is there a static_fail?
                 }
             }
 
