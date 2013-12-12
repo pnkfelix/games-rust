@@ -492,11 +492,7 @@ pub mod games {
 
         // Can respond to an invalid move by providing a different one
         // to apply.
-        condition! {
-            pub invalid_move : (super::InvalidMoveReason,
-                                super::Move,
-                                super::Game) -> super::Move;
-        }
+        type invalid_move<'a> = 'a |InvalidMoveReason, Move, Game| -> Move;
 
         #[deriving(Clone)]
         pub struct AntichessVariants {
@@ -697,6 +693,8 @@ pub mod games {
             AllPiecesButKingGone,
         }
 
+        
+
         impl Game {
             pub fn to_str(&self) -> ~str {
                 let ret = self.board.to_str();
@@ -891,11 +889,14 @@ pub mod games {
                 }
             }
 
-            pub fn validate_move(&self, move: Move) -> ElaboratedMove {
+            
+
+            pub fn validate_move<'a>(&self, move: Move, handler: invalid_move<'a>)
+                                     -> ElaboratedMove {
                 let mut move = move;
 
                 let raise = |reason| {
-                    invalid_move::cond.raise((reason, move, self.clone()))
+                    handler(reason, move, self.clone())
                 };
 
                 // macro_rules! retry(
@@ -994,10 +995,10 @@ pub mod games {
                 }
             }
 
-            pub fn do_move(&mut self, move: Move) {
+            pub fn do_move<'a>(&mut self, move: Move, handler: invalid_move<'a>) {
                 let ElaboratedMove{
                     move: move, source: _, target: target_man
-                } = self.validate_move(move);
+                } = self.validate_move(move, handler);
 
                 self.board.do_move_without_validation(move, Some(queen));
 
@@ -1255,15 +1256,15 @@ pub mod games {
 
             let mut inp = BufferedReader::new(inp);
             let (from, to) = get_move(&b, &mut inp);
-            ch::invalid_move::cond.trap(|(r, m, b)| {
+
+            let handler = |r:ch::InvalidMoveReason, m:ch::Move, b:ch::Game| {
                     let m : ch::Move = m;
                     print(format!("invalid move: {:s} because {:s}\n",
                                   m.to_str(), r.reason()));
                     print("try again, ");
                     get_move(&b, &mut inp)
-                }).inside(|| {
-                b.do_move((from, to));
-            });
+            };
+            b.do_move((from, to), handler)
         }
     }
 }
