@@ -686,7 +686,7 @@ pub mod games {
             }
         }
 
-        enum GameEnd {
+        pub enum GameEnd {
             CheckMateFor(Color),
             StaleMate,
             AllPiecesGone,
@@ -1243,7 +1243,17 @@ pub mod games {
 
             match b.is_game_over() {
                 None => {},
-                Some(end) => { println(format!("{:?}", end)); break; }
+                Some(end) => {
+                    match end {
+                        ch::CheckMateFor(c) =>
+                            println!("victory for {:?}, {:?}", c, end),
+                        ch::StaleMate =>
+                            println!("stalemate, {:?}", end),
+                        ch::AllPiecesGone | ch::AllPiecesButKingGone =>
+                            println!("victory for {:?}, {:?}", b.current, end),
+                    }
+                    break;
+                }
             }
 
             if b.is_check() { println("Check"); }
