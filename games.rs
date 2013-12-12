@@ -1043,10 +1043,6 @@ pub mod games {
     }
 
     condition! {
-        pub unreadable_move : ~str -> (super::chess::Square, super::chess::Square);
-    }
-
-    condition! {
         pub no_input_move_provided : () -> super::chess::Move;
     }
 
@@ -1057,7 +1053,7 @@ pub mod games {
         let input = inp.read_line();
         println("");
         debug!("Got input: {:?}",  input);
-        unreadable_move::cond.trap(|input| {
+        parse_opt_move(input.clone(), |input| {
                 println(format!("Could not parse input: <<{:s}>>", input));
                 println("try again");
                 print(format!("{:s}", g.to_str()));
@@ -1070,12 +1066,10 @@ pub mod games {
                 // after some attempt threshold.
                 //
                 // (The fix is probably to rewrite parse_move to
-                // return Option instead of raising a condition; its
-                // not like the code within parse uses the
-                // continuability of the raised condition.)
+                // return Option instead of invoking a retry-handler;
+                // its not like parse code ever attempts to do
+                // anything non-trivial with value produced by retry.)
                 get_move_recur(g, inp)
-            }).inside(|| {
-                parse_opt_move(input.clone())
             })
     }
 
@@ -1118,22 +1112,23 @@ pub mod games {
         }
     }
 
-    pub fn parse_opt_move(input: Option<~str>) -> ChessMove {
+    pub fn parse_opt_move(input: Option<~str>, reparse: |~str| -> ChessMove)
+                          -> ChessMove {
         match input {
-            Some(s) => parse_move(s),
+            Some(s) => parse_move(s, reparse),
             None    => no_input_move_provided::cond.raise(()),
         }
     }
 
-    pub fn parse_move(input: ~str) -> ChessMove {
+    pub fn parse_move(input: ~str, reparse: |~str| -> ChessMove) -> ChessMove {
         use ch = games::chess;
 
         if input.char_len() < 2 {
-            return unreadable_move::cond.raise(input.clone())
+            return reparse(input.clone());
         }
 
         let (from_letter, from_number, post_idx) = match read_square(input) {
-            None => return unreadable_move::cond.raise(input.clone()),
+            None => return reparse(input.clone()),
             Some(t) => t
         };
 
@@ -1143,7 +1138,7 @@ pub mod games {
         let rest = input.slice_from(post_idx);
 
         let (to_letter, to_number, _) = match read_square(rest) {
-            None => return unreadable_move::cond.raise(input.clone()),
+            None => return reparse(input.clone()),
             Some(t) => t
         };
 
@@ -1155,7 +1150,7 @@ pub mod games {
             (ch::Square{letter: from_letter.unwrap(), number: from_number.unwrap()},
              ch::Square{letter:   to_letter.unwrap(), number: to_number.unwrap()})
         } else {
-            unreadable_move::cond.raise(input.clone())
+            reparse(input.clone())
         }
     }
 
