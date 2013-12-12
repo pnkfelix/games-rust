@@ -1,5 +1,3 @@
-#[feature(managed_boxes)];
-
 extern mod extra;
 use opts = extra::getopts;
 use std::num::One;
