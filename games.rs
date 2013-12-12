@@ -1,11 +1,10 @@
 #[feature(managed_boxes)];
-#[feature(globs)];
 
 extern mod extra;
-use extra::getopts::*;
+use opts = extra::getopts;
 use std::num::One;
 
-fn print_usage(program: &str, _opts: &[Opt]) {
+fn print_usage(program: &str, _opts: &[opts::Opt]) {
     println!("Usage: {} [options]", program);
     println("--chess");
     println("--antichess");
@@ -15,14 +14,14 @@ fn print_usage(program: &str, _opts: &[Opt]) {
 fn main() {
     use std::os;
 
-    let opts = ~[optflag("chess"),
-                 optopt("antichess"),
-                 optflag("h"),
-                 optflag("help"),];
+    let opts = ~[opts::optflag("chess"),
+                 opts::optopt("antichess"),
+                 opts::optflag("h"),
+                 opts::optflag("help"),];
     let args = os::args();
     let program = args[0].clone();
 
-    let matches = match getopts(args.tail(), opts) {
+    let matches = match opts::getopts(args.tail(), opts) {
         Ok(m) => { m },
         Err(f) => { fail!(f.to_err_msg()) }
     };
@@ -1139,7 +1138,7 @@ pub mod games {
     }
 
     pub fn parse_move(input: ~str) -> ChessMove {
-        use games::chess::*;
+        use ch = games::chess;
 
         if input.char_len() < 2 {
             return unreadable_move::cond.raise(input.clone())
@@ -1150,8 +1149,8 @@ pub mod games {
             Some(t) => t
         };
 
-        let from_letter = Col::from_char(from_letter);
-        let from_number = Row::from_char(from_number);
+        let from_letter = ch::Col::from_char(from_letter);
+        let from_number = ch::Row::from_char(from_number);
 
         let rest = input.slice_from(post_idx);
 
@@ -1160,49 +1159,49 @@ pub mod games {
             Some(t) => t
         };
 
-        let to_letter = Col::from_char(to_letter);
-        let to_number = Row::from_char(to_number);
+        let to_letter = ch::Col::from_char(to_letter);
+        let to_number = ch::Row::from_char(to_number);
 
         if (from_letter.is_some() && from_number.is_some()
             && to_letter.is_some() && to_number.is_some()) {
-            (Square{letter: from_letter.unwrap(), number: from_number.unwrap()},
-             Square{letter:   to_letter.unwrap(), number: to_number.unwrap()})
+            (ch::Square{letter: from_letter.unwrap(), number: from_number.unwrap()},
+             ch::Square{letter:   to_letter.unwrap(), number: to_number.unwrap()})
         } else {
             unreadable_move::cond.raise(input.clone())
         }
     }
 
     pub fn chess() {
-        use games::chess::*;
-        let v = Variant{
-            pawn_promotion: ~[queen, rook, bishop, knight],
-            rules: NormalChess,
+        use ch = games::chess;
+        let v = ch::Variant{
+            pawn_promotion: ~[ch::queen, ch::rook, ch::bishop, ch::knight],
+            rules: ch::NormalChess,
         };
 
         chess_game(v);
     }
 
     pub fn antichess() {
-        use games::chess::*;
-        let v = Variant{
-            pawn_promotion: ~[queen, rook, bishop, knight],
-            rules: Antichess(AntichessVariants{
+        use ch = games::chess;
+        let v = ch::Variant{
+            pawn_promotion: ~[ch::queen, ch::rook, ch::bishop, ch::knight],
+            rules: ch::Antichess(ch::AntichessVariants{
                     fewer_pieces_wins_on_stalemate: false,
-                    king_has_royal_power: RoyalGettingCheckmatedLoses,
+                    king_has_royal_power: ch::RoyalGettingCheckmatedLoses,
                 })};
 
         chess_game(v);
     }
 
     pub fn chess_game(variant: chess::Variant) {
-        use games::chess::*;
+        use ch = games::chess;
         use std::io;
         use std::io::buffered::BufferedReader;
 
-        let mut b = Game {
+        let mut b = ch::Game {
             variant: variant,
-            board: chess::initial_board,
-            current: white,
+            board: ch::initial_board,
+            current: ch::white,
             black_taken: ~[], // ~[queen],
             white_taken: ~[], // ~[pawn, pawn]
         };
@@ -1228,8 +1227,8 @@ pub mod games {
 
             let mut inp = BufferedReader::new(inp);
             let (from, to) = get_move(&b, &mut inp);
-            invalid_move::cond.trap(|(r, m, b)| {
-                    let m : Move = m;
+            ch::invalid_move::cond.trap(|(r, m, b)| {
+                    let m : ch::Move = m;
                     print(format!("invalid move: {:s} because {:s}\n",
                                   m.to_str(), r.reason()));
                     print("try again, ");
