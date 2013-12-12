@@ -131,7 +131,7 @@ pub mod games {
             }
 
             fn pawn_home_row(self) -> Row {
-                let (vdir, vorigin) = self.pawn_vdir_and_vorigin();
+                let (_vdir, vorigin) = self.pawn_vdir_and_vorigin();
                 Row(vorigin)
             }
 
@@ -648,7 +648,6 @@ pub mod games {
                         },
                         Finished       => { self.curr_moves = curr_moves; return None },
                     }
-                    unreachable!() // is there a static_fail?
                 }
             }
         }
