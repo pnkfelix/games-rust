@@ -119,7 +119,7 @@ pub mod games {
         pub enum Color { black, white }
 
         impl Color {
-            fn rev(self) -> Color {
+            pub fn rev(self) -> Color {
                 match self { black => white, white => black }
             }
 
@@ -1224,6 +1224,8 @@ pub mod games {
 
     pub fn chess_game(variant: chess::Variant) {
         use ch = games::chess;
+        use AV = games::chess::AntichessVariants;
+        use Antichess = games::chess::Antichess;
         use std::io;
         use std::io::buffered::BufferedReader;
 
@@ -1245,9 +1247,17 @@ pub mod games {
                 None => {},
                 Some(end) => {
                     match end {
-                        ch::CheckMateFor(c) =>
-                            println!("victory for {:?}, {:?}", c, end),
+                        ch::CheckMateFor(c) => {
+                            let winner = match b.variant.rules {
+                                Antichess(AV {king_has_royal_power:
+                                              ch::RoyalGettingCheckmatedWins, ..})
+                                    => c.rev(),
+                                _   => c
+                            };
+                            println!("victory for {:?}, {:?}", winner, end);
+                        }
                         ch::StaleMate =>
+                                // XXX antichess has piece count variants
                             println!("stalemate, {:?}", end),
                         ch::AllPiecesGone | ch::AllPiecesButKingGone =>
                             println!("victory for {:?}, {:?}", b.current, end),
