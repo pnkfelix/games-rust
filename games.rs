@@ -1072,7 +1072,9 @@ pub mod games {
     }
     pub fn get_move_recur<BUF:Buffer>(g: &chess::Game, inp: &mut BUF) -> ChessMove {
         let retry = |input: ~str, p: &mut MoveReader<BUF>| {
-            println(format!("Could not parse input: <<{:s}>>", input));
+            println(format!("Attempt {}: Could not parse input: <<{:s}>>",
+                            p.reparse.attempts_since_success,
+                            input.trim()));
             println("try again");
             print(format!("{:s}", g.to_str()));
 
