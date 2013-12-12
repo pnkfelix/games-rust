@@ -1047,13 +1047,21 @@ pub mod games {
     }
 
     type ChessMove = chess::Move;
+    struct MoveReader;
 
     pub fn get_move_recur<BUF:Buffer>(g: &chess::Game, inp: &mut BUF) -> ChessMove {
-        print(format!("{:s}'s move? ", g.current.to_str()));
-        let input = inp.read_line();
-        println("");
-        debug!("Got input: {:?}",  input);
-        parse_opt_move(input.clone(), |input| {
+        let p = MoveReader;
+        p.get_move_recur(g, inp)
+    }
+
+    impl MoveReader {
+        fn get_move_recur<BUF:Buffer>(&self, g: &chess::Game, inp:&mut BUF) -> ChessMove {
+            print(format!("{:s}'s move? ", g.current.to_str()));
+            let input = inp.read_line();
+            println("");
+            debug!("Got input: {:?}",  input);
+
+            let retry = |input, p: &MoveReader| {
                 println(format!("Could not parse input: <<{:s}>>", input));
                 println("try again");
                 print(format!("{:s}", g.to_str()));
@@ -1069,8 +1077,11 @@ pub mod games {
                 // return Option instead of invoking a retry-handler;
                 // its not like parse code ever attempts to do
                 // anything non-trivial with value produced by retry.)
-                get_move_recur(g, inp)
-            })
+                p.get_move_recur(g, inp)
+            };
+
+            self.parse_opt_move(input.clone(), retry)
+        }
     }
 
     pub fn get_move<BUF:Buffer>(g: &chess::Game, inp: &mut BUF) -> ChessMove {
@@ -1093,7 +1104,8 @@ pub mod games {
         }
     }
 
-    pub fn read_square(input: &str) -> Option<(char, char, uint)> {
+    impl MoveReader {
+    pub fn read_square(&self, input: &str) -> Option<(char, char, uint)> {
         let idx = input.find(|c| ('a' <= c && c <= 'h'));
         debug!("read_square idx: {:?}", idx);
         match idx {
@@ -1112,23 +1124,23 @@ pub mod games {
         }
     }
 
-    pub fn parse_opt_move(input: Option<~str>, reparse: |~str| -> ChessMove)
+    pub fn parse_opt_move(&self, input: Option<~str>, reparse: |~str, &MoveReader| -> ChessMove)
                           -> ChessMove {
         match input {
-            Some(s) => parse_move(s, reparse),
+            Some(s) => self.parse_move(s, reparse),
             None    => no_input_move_provided::cond.raise(()),
         }
     }
 
-    pub fn parse_move(input: ~str, reparse: |~str| -> ChessMove) -> ChessMove {
+    pub fn parse_move(&self, input: ~str, reparse: |~str, &MoveReader| -> ChessMove) -> ChessMove {
         use ch = games::chess;
 
         if input.char_len() < 2 {
-            return reparse(input.clone());
+            return reparse(input.clone(), self);
         }
 
-        let (from_letter, from_number, post_idx) = match read_square(input) {
-            None => return reparse(input.clone()),
+        let (from_letter, from_number, post_idx) = match self.read_square(input) {
+            None => return reparse(input.clone(), self),
             Some(t) => t
         };
 
@@ -1137,8 +1149,8 @@ pub mod games {
 
         let rest = input.slice_from(post_idx);
 
-        let (to_letter, to_number, _) = match read_square(rest) {
-            None => return reparse(input.clone()),
+        let (to_letter, to_number, _) = match self.read_square(rest) {
+            None => return reparse(input.clone(), self),
             Some(t) => t
         };
 
@@ -1150,8 +1162,9 @@ pub mod games {
             (ch::Square{letter: from_letter.unwrap(), number: from_number.unwrap()},
              ch::Square{letter:   to_letter.unwrap(), number: to_number.unwrap()})
         } else {
-            reparse(input.clone())
+            reparse(input.clone(), self)
         }
+    }
     }
 
     pub fn chess() {
