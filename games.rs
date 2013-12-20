@@ -1,10 +1,9 @@
 extern mod extra;
-use extra::getopts::*;
-
+use opts = extra::getopts;
 use std::num::One;
 
-fn print_usage(program: &str, _opts: &[Opt]) {
-    printfln!("Usage: %s [options]", program);
+fn print_usage(program: &str, _opts: &[opts::Opt]) {
+    println!("Usage: {} [options]", program);
     println("--chess");
     println("--antichess [variant]");
     println("-h --help\tUsage");
@@ -13,24 +12,24 @@ fn print_usage(program: &str, _opts: &[Opt]) {
 fn main() {
     use std::os;
 
-    let opts = ~[optflag("chess"),
-                 optflagopt("antichess"),
-                 optflag("h"),
-                 optflag("help"),];
+    let opts = ~[opts::optflag("chess"),
+                 opts::optflagopt("antichess"),
+                 opts::optflag("h"),
+                 opts::optflag("help"),];
     let args = os::args();
     let program = args[0].clone();
 
-    let matches = match getopts(args.tail(), opts) {
+    let matches = match opts::getopts(args.tail(), opts) {
         Ok(m) => { m },
-        Err(f) => { fail!(fail_str(f)) }
+        Err(f) => { fail!(f.to_err_msg()) }
     };
 
-    if opt_present(&matches, "h") || opt_present(&matches, "help") {
+    if matches.opt_present("h") || matches.opt_present("help") {
         print_usage(program, opts);
         return;
     }
 
-    if opt_present(&matches, "chess") {
+    if matches.opt_present("chess") {
         games::chess();
     } else {
         games::antichess();
@@ -84,11 +83,11 @@ pub mod games {
 
     struct offset {
         base: char,
-        magnitude: uint,
+        magnitude: u8,
     }
 
     impl offset {
-        fn magnitude(&self) -> uint { self.magnitude }
+        fn magnitude(&self) -> u8 { self.magnitude }
     }
 
     pub fn offset_range(min: char, max: char) -> offset_range {
@@ -100,7 +99,7 @@ pub mod games {
             if self.min <= c && c <= self.max {
                 Some(offset {
                         base: self.min,
-                        magnitude: c as uint - self.min as uint
+                        magnitude: c as u8 - self.min as u8
                     })
             } else {
                 None
@@ -111,6 +110,7 @@ pub mod games {
 
     pub mod chess {
         use std::util;
+
         use super::offset_range;
         use N = std::option::None;
         use S = std::option::Some;
@@ -119,20 +119,15 @@ pub mod games {
         pub enum Color { black, white }
 
         impl Color {
-            fn rev(self) -> Color {
+            pub fn rev(self) -> Color {
                 match self { black => white, white => black }
             }
 
-            fn pawn_vdir_and_vorigin(self) -> (int, uint) {
+            fn pawn_vdir_and_vorigin(self) -> (int, u8) {
                 match self {
                     white => (1,1),
                     black => (-1,6)
                 }
-            }
-
-            fn pawn_home_row(self) -> Row {
-                let (vdir, vorigin) = self.pawn_vdir_and_vorigin();
-                Row(vorigin)
             }
 
             fn pawn_end_row(self) -> Row {
@@ -198,14 +193,14 @@ pub mod games {
             }
         }
 
-        struct OccupiedSquaresIter<'self> {
-            board: &'self Board,
+        struct OccupiedSquaresIter<'a> {
+            board: &'a Board,
             row:Row,
             col:Col,
             color: Color,
         }
 
-        impl<'self> Iterator<Square> for OccupiedSquaresIter<'self> {
+        impl<'a> Iterator<Square> for OccupiedSquaresIter<'a> {
             fn next(&mut self) -> Option<Square> {
                 loop {
                     let s = Square(self.col, self.row);
@@ -215,15 +210,15 @@ pub mod games {
                     } else if *self.col >= 8 {
                         *self.row = *self.row + 1;
                         *self.col = 0;
-                        loop;
+                        continue;
                     } else {
                         *self.col = *self.col + 1;
                         match self.board.at(s) {
-                            None           => loop,
+                            None           => continue,
                             Some(Man(c,_)) => if c == self.color {
                                 return Some(s)
                             } else {
-                                loop
+                                continue
                             },
                         }
                     }
@@ -242,37 +237,37 @@ pub mod games {
         }
 
         #[deriving(Eq)]
-        pub struct Row(uint);
+        pub struct Row(u8);
 
         #[deriving(Eq)]
-        pub struct Col(uint);
+        pub struct Col(u8);
 
         impl ToStr for Row {
             fn to_str(&self) -> ~str {
-                ('1' as uint + **self).to_str()
+                ('1' as u8 + **self).to_str()
             }
         }
 
         impl Row {
-            fn maybe(mag:Option<uint>) -> Option<Row> {mag.map(|m| { Row(*m) })}
+            fn maybe(mag:Option<u8>) -> Option<Row> {mag.map(|m| { Row(m) })}
             pub fn from_char(c:char) -> Option<Row> {
                 Row::maybe(offset_range('1', '8').inject(c).map(|x|x.magnitude()))
             }
-            fn magnitude(&self) -> uint { **self }
+            fn magnitude(&self) -> u8 { **self }
         }
 
         impl ToStr for Col {
             fn to_str(&self) -> ~str {
-                ('a' as uint + **self).to_str()
+                ('a' as u8 + **self).to_str()
             }
         }
 
         impl Col {
-            fn maybe(mag:Option<uint>) -> Option<Col> {mag.map(|m| { Col(*m) })}
+            fn maybe(mag:Option<u8>) -> Option<Col> {mag.map(|m| { Col(m) })}
             pub fn from_char(c:char) -> Option<Col> {
                 Col::maybe(offset_range('a', 'h').inject(c).map(|x|x.magnitude()))
             }
-            fn magnitude(&self) -> uint { **self }
+            fn magnitude(&self) -> u8 { **self }
         }
 
         impl Sub<Col,int> for Col { fn sub(&self, c:&Col) -> int { (**self as int) - (**c as int) } }
@@ -287,9 +282,6 @@ pub mod games {
 
         pub struct DSquare { dcol: int, drow: int }
         impl Square {
-            fn delta_to(&self, s: Square) -> DSquare {
-                DSquare{ dcol: s.letter - self.letter, drow: s.number - self.number }
-            }
             fn delta_from(&self, s: Square) -> DSquare {
                 DSquare{ dcol: self.letter - s.letter, drow: self.number - s.number }
             }
@@ -300,25 +292,25 @@ pub mod games {
                 if ncol < 0 || ncol >= 8 || nrow < 0 || nrow >= 8 {
                     None
                 } else {
-                    Some(Square{letter: Col(ncol as uint), number: Row(nrow as uint)})
+                    Some(Square{letter: Col(ncol as u8), number: Row(nrow as u8)})
                 }
             }
         }
 
         impl ToStr for Square {
             fn to_str(&self) -> ~str {
-                fmt!("%c%c",
-                     ('a' as uint + *self.letter) as char,
-                     ('1' as uint + *self.number) as char)
+                format!("{:c}{:c}",
+                        ('a' as u8 + *self.letter) as char,
+                        ('1' as u8 + *self.number) as char)
             }
         }
 
         impl ToStr for Board {
             fn to_str(&self) -> ~str {
                 let mut accum = ~" abcdefgh\n";
-                let mut count = 8;
+                let mut count = 8u;
                 for row in self.rows.rev_iter() {
-                    accum = accum + fmt!("%u", count);
+                    accum = accum + format!("{:u}", count);
                     let mut square_color =
                         if count % 2 == 0 { white } else { black };
                     for cell in row.iter() {
@@ -331,11 +323,11 @@ pub mod games {
                         };
                         square_color = square_color.rev();
                     }
-                    accum = accum + fmt!("%u", count) + "\n";
+                    accum = accum + format!("{:u}", count) + "\n";
                     count -= 1;
                 }
                 accum = accum + " abcdefgh";
-                fmt!("%s", accum)
+                format!("{:s}", accum)
             }
         }
 
@@ -352,7 +344,7 @@ pub mod games {
                                 if self.at(s).is_none() {
                                     accum.push(s);
                                     cursor = s;
-                                    loop;
+                                    continue;
                                 } else {
                                     accum.push(s);
                                     break;
@@ -441,12 +433,12 @@ pub mod games {
                                                 s.plus( 2,-1), s.plus( 2, 1)]),
                             pawn   => self.get_moves_for_pawn(s, color)
                         };
-                        do blind_moves.retain |to| {
+                        blind_moves.retain(|to| {
                             match self.at(*to) {
                                 None => true,
                                 Some(Man(to_color, _)) => color.rev() == to_color
                             }
-                        }
+                        });
                         blind_moves
                     }
                 }
@@ -500,11 +492,7 @@ pub mod games {
 
         // Can respond to an invalid move by providing a different one
         // to apply.
-        condition! {
-            pub invalid_move : (super::InvalidMoveReason,
-                                super::Move,
-                                super::Game) -> super::Move;
-        }
+        type invalid_move<'a> = 'a |InvalidMoveReason, Move, &Game| -> Move;
 
         #[deriving(Clone)]
         pub struct AntichessVariants {
@@ -522,7 +510,7 @@ pub mod games {
         pub struct Variant { pawn_promotion: ~[Piece], rules: RulesVariant, }
 
         #[deriving(Clone)]
-        struct Game {
+        pub struct Game {
             variant: Variant,
             board: Board,
             current: Color,
@@ -563,21 +551,21 @@ pub mod games {
         // *also* moves that leave the current player's king exposed
         // to capture.  You need to do a post-psss over the reuslt to
         // ensure that you have not put your own king into check.
-        struct AllMovesIter<'self> {
-            board: &'self Board,
+        struct AllMovesIter<'a> {
+            board: &'a Board,
             current: Color,
-            rest_squares: OccupiedSquaresIter<'self>,
+            rest_squares: OccupiedSquaresIter<'a>,
             curr_moves: Option<(Square, ~[Square], uint)>,
         }
 
         enum CapturingFilter { IgnoreCapturing, CapturingOnly, NoncapturingOnly, }
 
-        struct MovesFilterLegality<'self> {
-            iter: AllMovesIter<'self>,
+        struct MovesFilterLegality<'a> {
+            iter: AllMovesIter<'a>,
             capturing_filter: CapturingFilter,
         }
 
-        impl<'self> Iterator<Move> for AllMovesIter<'self> {
+        impl<'a> Iterator<Move> for AllMovesIter<'a> {
             fn next(&mut self) -> Option<Move> {
                 // debug!("AllMovesIter next: %?", self);
 
@@ -592,12 +580,12 @@ pub mod games {
                 impl ToStr for Step {
                     fn to_str(&self) -> ~str {
                         match *self {
-                            Yielding(n, m)    => fmt!("Yielding(%u, %s)", n, m.to_str()),
-                            LoopNextSquare    => fmt!("LoopNextSquare"),
-                            LoopNewIndex(n)   => fmt!("LoopNewIndex(%u)", n),
+                            Yielding(n, m)    => format!("Yielding({:u}, {:s})", n, m.to_str()),
+                            LoopNextSquare    => format!("LoopNextSquare"),
+                            LoopNewIndex(n)   => format!("LoopNewIndex({:u})", n),
                             LoopNewVec(ref s, ref ss) =>
-                                fmt!("LoopNewVec(%s, %s)", s.to_str(), ss.to_str()),
-                            Finished          => fmt!("Finished")
+                                format!("LoopNewVec({:s}, {:s})", s.to_str(), ss.to_str()),
+                            Finished          => format!("Finished")
                         }
                     }
                 }
@@ -627,7 +615,7 @@ pub mod games {
                             None => Finished
                         }
                     };
-                    // debug!("AllMovesIter step: %s", step.to_str());
+                    // debug!("AllMovesIter step: {:s}", step.to_str());
                     match step {
                         Yielding(j, m)     => {
                             match curr_moves {
@@ -636,25 +624,24 @@ pub mod games {
                             }
                             return Some(m)
                         },
-                        LoopNextSquare  => { curr_moves = None; loop; },
+                        LoopNextSquare  => { curr_moves = None; continue; },
                         LoopNewIndex(i) => {
                             let (from, to_vec, _) = curr_moves.unwrap();
                             curr_moves = Some((from, to_vec, i));
-                            loop;
+                            continue;
                         },
                         LoopNewVec(s, v)  => {
                             curr_moves = Some((s, v, 0));
-                            loop;
+                            continue;
                         },
                         Finished       => { self.curr_moves = curr_moves; return None },
                     }
-                    util::unreachable() // is there a static_fail?
                 }
             }
         }
 
-        impl<'self> AllMovesIter<'self> {
-            fn filter_exposed_kings(self, f: CapturingFilter) -> MovesFilterLegality<'self> {
+        impl<'a> AllMovesIter<'a> {
+            fn filter_exposed_kings(self, f: CapturingFilter) -> MovesFilterLegality<'a> {
                 MovesFilterLegality {
                     iter: self, capturing_filter: f,
                 }
@@ -678,19 +665,19 @@ pub mod games {
             return None;
         }
 
-        impl<'self> Iterator<Move> for MovesFilterLegality<'self> {
+        impl<'a> Iterator<Move> for MovesFilterLegality<'a> {
             fn next(&mut self) -> Option<Move> {
                 for m in self.iter {
                     match self.capturing_filter {
-                        CapturingOnly if ! self.iter.board.move_is_capturing(m) => loop,
-                        NoncapturingOnly if self.iter.board.move_is_capturing(m) => loop,
+                        CapturingOnly if ! self.iter.board.move_is_capturing(m) => continue,
+                        NoncapturingOnly if self.iter.board.move_is_capturing(m) => continue,
                         _ => {},
                     }
 
                     let mut b = self.iter.board.clone();
                     b.do_move_without_validation(m, Some(queen));
                     if king_capturable(&b, self.iter.current).is_some() {
-                        loop
+                        continue
                     } else {
                         return Some(m);
                     }
@@ -699,20 +686,22 @@ pub mod games {
             }
         }
 
-        enum GameEnd {
+        pub enum GameEnd {
             CheckMateFor(Color),
             StaleMate,
             AllPiecesGone,
             AllPiecesButKingGone,
         }
 
+        
+
         impl Game {
             pub fn to_str(&self) -> ~str {
                 let ret = self.board.to_str();
                 let ret = ret.replace("8\n",
-                                      fmt!("8 %s \n", pieces_to_str(black, self.black_taken)));
+                                      format!("8 {:s} \n", pieces_to_str(black, self.black_taken)));
                 let ret = ret.replace("1\n",
-                                      fmt!("1 %s \n", pieces_to_str(white, self.white_taken)));
+                                      format!("1 {:s} \n", pieces_to_str(white, self.white_taken)));
                 let ret = ret + "\n" + self.current.to_str() + "'s move";
                 ret
             }
@@ -750,11 +739,11 @@ pub mod games {
             pub fn is_game_over(&self) -> Option<GameEnd> {
                 let current = self.current;
                 fn king_capturable_in_all_moves(g:&Game, current:Color) -> bool {
-                    do g.all_moves_iter().all |move| {
+                    g.all_moves_iter().all(|move| {
                         let mut b = g.board.clone();
                         b.do_move_without_validation(move, Some(queen));
                         king_capturable(&b, current).is_some()
-                    }
+                    })
                 }
 
                 if self.king_has_royal_power() &&
@@ -820,7 +809,7 @@ pub mod games {
                 let Man(color, p) = m;
                 let dsquare = to.delta_from(from);
                 let DSquare{ dcol: dcol, drow: drow } = dsquare;
-                debug!("is_illegal m: %s (from, to): %s dsquare: %?",
+                debug!("is_illegal m: {:s} (from, to): {:s} dsquare: {:?}",
                        m.to_str(), (from,to).to_str(), dsquare);
                 match p {
                     king   => if dcol.abs() <= 1 && drow.abs() <= 1 { None }
@@ -837,7 +826,7 @@ pub mod games {
                         else { Some(~"knights move by two and then by one") },
                     pawn   => {
                         let (vdir, vorigin) = color.pawn_vdir_and_vorigin();
-                        debug!("is_illegal pawn vdir: %? vorigin: %? from.number: %? dcol: %? drow: %?",
+                        debug!("is_illegal pawn vdir: {:?} vorigin: {:?} from.number: {:?} dcol: {:?} drow: {:?}",
                                vdir, vorigin, *from.number, dcol, drow);
                         if *from.number == vorigin && dcol == 0 && drow == vdir*2
                             && self.board.at(to).is_none() {
@@ -853,10 +842,10 @@ pub mod games {
                         } else if dcol.abs() == 1 && drow == vdir && self.board.at(to).is_none() {
                             Some(~"Pawns cannot move diagonally unless capturing.")
                         } else if (*from.number == vorigin && dcol == 0 && drow.abs() > 2) {
-                            Some(fmt!("Pawn in home row move forward by one or two spaces, not %d",
+                            Some(format!("Pawn in home row move forward by one or two spaces, not {:d}",
                                       drow))
                         } else if *from.number != vorigin && drow != vdir {
-                            Some(fmt!("Pawn outside home row move forward by one space, not %d",
+                            Some(format!("Pawn outside home row move forward by one space, not {:d}",
                                       drow))
                         } else if self.board.at(to).is_some() && dcol == 0 {
                             Some(~"Pawns cannot capture unless moving diagonally")
@@ -868,7 +857,7 @@ pub mod games {
             }
 
             pub fn find_occupied_between(&self, from: Square, to: Square) -> Option<Square> {
-                fn signum(from:uint, to:uint) -> int {
+                fn signum(from:u8, to:u8) -> int {
                     if to > from { 1 } else if to == from { 0 } else { -1 }
                 }
 
@@ -878,16 +867,16 @@ pub mod games {
                 let dcol = signum(col, end_col);
                 let drow = signum(row, end_row);
 
-                let mut row = (row as int + drow) as uint;
-                let mut col = (col as int + dcol) as uint;
+                let mut row = (row as int + drow) as u8;
+                let mut col = (col as int + dcol) as u8;
                 loop {
                     if row == end_row && col == end_col { return None; }
                     let s = Square{ letter: Col(col), number: Row(row) };
                     if self.board.at(s).is_some() {
                         return Some(s);
                     }
-                    row = (row as int + drow) as uint;
-                    col = (col as int + dcol) as uint;
+                    row = (row as int + drow) as u8;
+                    col = (col as int + dcol) as u8;
                 }
             }
 
@@ -900,20 +889,24 @@ pub mod games {
                 }
             }
 
-            pub fn validate_move(&self, move: Move) -> ElaboratedMove {
+            
+
+            pub fn validate_move<'a>(&self, move: Move, handler: &invalid_move<'a>)
+                                     -> ElaboratedMove {
                 let mut move = move;
 
                 let raise = |reason| {
-                    invalid_move::cond.raise((reason, move, self.clone()))
+                    (*handler)(reason, move, self)
                 };
 
-                macro_rules! retry(
-                    ($reason:expr) => { move = raise($reason); loop; }
-                );
-
-                macro_rules! retry2(
-                    ($d:ident, $reason:expr) => { $d = raise($reason); loop; }
-                );
+                // macro_rules! retry(
+                //     ($reason:expr) => { move = raise($reason); loop; }
+                // );
+                // 
+                // #[cfg(try_macros)]
+                // macro_rules! retry2(
+                //     ($d:ident, $reason:expr) => { $d = raise($reason); loop; }
+                // );
 
                 loop {
                     let (from, to) = move;
@@ -924,36 +917,36 @@ pub mod games {
                         // (I can expose via the input sequence: "c2 c2", "c2 c3")
                         // retry!(move, r)
                         // retry2!(move, r)
-                        move = raise(r); loop;
+                        move = raise(r); continue;
                     }
 
                     let m = *self.board.cell(from);
 
-                    debug!("validate move %? : man %?", move.to_str(), m);
+                    debug!("validate move {:?} : man {:?}", move.to_str(), m);
 
                     match m {
                         None => {
-                            move = raise(source_square_is_empty(from)); loop;
+                            move = raise(source_square_is_empty(from)); continue;
                         }
                         Some(source_man @ Man(color, _)) => {
                             if self.current != color {
-                                move = raise(piece_is_not_your_color(source_man)); loop;
+                                move = raise(piece_is_not_your_color(source_man)); continue;
                             }
 
                             match self.is_illegal(source_man, from, to) {
                                 None => {},
                                 Some(text) => {
                                     let r = man_cannot_make_move(source_man, move, text);
-                                    move = raise(r); loop;
+                                    move = raise(r); continue;
                                 }
                             }
 
                             match self.check_for_blockage(source_man, from, to) {
                                 None => {},
-                                Some(sq) => { move = raise(move_is_blocked_by(move, sq)); loop; },
+                                Some(sq) => { move = raise(move_is_blocked_by(move, sq)); continue; },
                             }
 
-                            debug!("validate move %? : source %? to %?",
+                            debug!("validate move {:?} : source {:?} to {:?}",
                                    move.to_str(), source_man, to.to_str());
                             let target_man : Option<Man> =
                                 match *self.board.cell(to) {
@@ -962,10 +955,10 @@ pub mod games {
                                     None
                                 },
                                 Some(man @ Man(color, _)) => {
-                                    debug!("validate move %? : target man %?", move.to_str(), man);
+                                    debug!("validate move {:?} : target man {:?}", move.to_str(), man);
                                     if self.current == color {
                                         let r = target_square_holds_piece_of_your_color(man);
-                                        move = raise(r); loop;
+                                        move = raise(r); continue;
                                     } else {
                                         Some(man)
                                     }
@@ -976,7 +969,7 @@ pub mod games {
                                 let mut b = self.board.clone();
                                 b.do_move_without_validation(move, Some(queen));
                                 match king_capturable(&b, self.current) {
-                                    Some(s) => { move = raise(move_exposes_king(move, s)); loop },
+                                    Some(s) => { move = raise(move_exposes_king(move, s)); continue },
                                     _ => {}
                                 }
                             }
@@ -987,7 +980,7 @@ pub mod games {
                                     self.capturing_moves_iter().collect();
                                 if capturing_moves.len() > 0 {
                                     let exn = move_is_noncapturing(move, capturing_moves);
-                                    move = raise(exn); loop;
+                                    move = raise(exn); continue;
                                 }
                             }
 
@@ -999,14 +992,13 @@ pub mod games {
                             };
                         }
                     }
-                    fail!("should never get here"); // is there a static_fail?
                 }
             }
 
-            pub fn do_move(&mut self, move: Move) {
+            pub fn do_move<'a>(&mut self, move: Move, handler: &invalid_move<'a>) {
                 let ElaboratedMove{
                     move: move, source: _, target: target_man
-                } = self.validate_move(move);
+                } = self.validate_move(move, handler);
 
                 self.board.do_move_without_validation(move, Some(queen));
 
@@ -1051,40 +1043,80 @@ pub mod games {
         };
     }
 
-    condition! {
-        pub unreadable_move : ~str -> (super::chess::Square, super::chess::Square);
+    type ChessMove = chess::Move;
+    type retry<'a, BUF> = 'a |input: ~str, p: &mut MoveReader<'a, BUF>| -> ChessMove;
+
+    type no_input<'a, BUF> = 'a |&mut MoveReader<'a, BUF>| -> ChessMove;
+
+    struct Retry<'a, BUF> {
+        attempts_since_success: u32,
+        call: retry<'a, BUF>,
+        no_input: no_input<'a, BUF>,
     }
 
-    type ChessMove = chess::Move;
-
-    pub fn get_move_recur(g: &chess::Game, inp: @Reader) -> ChessMove {
-        print(fmt!("%s's move? ", g.current.to_str()));
-        let input = inp.read_line();
-        println("");
-        debug!("Got input: %?",  input);
-        do unreadable_move::cond.trap(|input| {
-                println(fmt!("Could not parse input: <<%s>>", input));
-                println("try again");
-                print(fmt!("%s", g.to_str()));
-
-                // XXX Rust is not tail-recursive, nor is this a
-                // tail-recursive context.  So this pattern is bad.
-                // However, (1.) we don't expect the user to make an
-                // unbounded number of input errors, and (2.) if we
-                // did expect that, we could keep a count and fail
-                // after some attempt threshold.
-                //
-                // (The fix is probably to rewrite parse_move to
-                // return Option instead of raising a condition; its
-                // not like the code within parse uses the
-                // continuability of the raised condition.)
-                get_move_recur(g, inp)
-            }).inside {
-            parse_move(input.clone())
+    impl<'a, BUF:Buffer> Retry<'a, BUF> {
+        fn new(call: retry<'a, BUF>, no_input: no_input<'a, BUF>) -> Retry<'a, BUF> {
+            Retry { attempts_since_success: 0, call: call, no_input: no_input }
         }
     }
 
-    pub fn get_move(g: &chess::Game, inp: @Reader) -> ChessMove {
+    struct MoveReader<'a, BUF> {
+        reparse: Retry<'a, BUF>,
+    }
+
+    impl<'a, BUF:Buffer> MoveReader<'a, BUF> {
+        fn reparse(&mut self, input: ~str) -> ChessMove {
+            self.reparse.attempts_since_success += 1;
+            (self.reparse.call)(input, self)
+        }
+        fn no_input(&mut self) -> ChessMove {
+            self.reparse.attempts_since_success += 1;
+            (self.reparse.no_input)(self)
+        }
+    }
+    pub fn get_move_recur<BUF:Buffer>(g: &chess::Game, inp: &mut BUF) -> ChessMove {
+        let retry = |input: ~str, p: &mut MoveReader<BUF>| {
+            println(format!("Attempt {}: Could not parse input: <<{:s}>>",
+                            p.reparse.attempts_since_success,
+                            input.trim()));
+            println("try again");
+            print(format!("{:s}", g.to_str()));
+
+            // XXX Rust is not tail-recursive, nor is this a
+            // tail-recursive context.  So this pattern is bad.
+            // However, (1.) we don't expect the user to make an
+            // unbounded number of input errors, and (2.) if we
+            // did expect that, we could keep a count and fail
+            // after some attempt threshold.
+            //
+            // (The fix is probably to rewrite parse_move to
+            // return Option instead of invoking a retry-handler;
+            // its not like parse code ever attempts to do
+            // anything non-trivial with value produced by retry.)
+            p.get_move_recur(g, inp)
+        };
+
+        let fail_on_no_input = |p: &mut MoveReader<BUF>| {
+            fail!("Attempt {}: no input provided, failing",
+                  p.reparse.attempts_since_success);
+        };
+
+        let mut p = MoveReader { reparse: Retry::new(retry, fail_on_no_input) };
+        p.get_move_recur(g, inp)
+    }
+
+    impl<'a, BUF:Buffer> MoveReader<'a, BUF> {
+        fn get_move_recur(&mut self, g: &chess::Game, inp:&mut BUF) -> ChessMove {
+            print(format!("{:s}'s move? ", g.current.to_str()));
+            let input = inp.read_line();
+            println("");
+            debug!("Got input: {:?}",  input);
+
+            self.parse_opt_move(input.clone())
+        }
+    }
+
+    pub fn get_move<BUF:Buffer>(g: &chess::Game, inp: &mut BUF) -> ChessMove {
         match g.current {
             chess::black => {
                 let mut i = g.moves_iter();
@@ -1104,9 +1136,10 @@ pub mod games {
         }
     }
 
-    pub fn read_square(input: &str) -> Option<(char, char, uint)> {
+    impl<'a, BUF:Buffer> MoveReader<'a, BUF> {
+    pub fn read_square(&self, input: &str) -> Option<(char, char, uint)> {
         let idx = input.find(|c| ('a' <= c && c <= 'h'));
-        debug!("read_square idx: %?", idx);
+        debug!("read_square idx: {:?}", idx);
         match idx {
             None => None,
             Some(idx) => {
@@ -1116,88 +1149,121 @@ pub mod games {
                     let to_letter = input.char_at(idx);
                     let to_number = input.char_at(idx+1);
                     let val = (to_letter, to_number, idx+2);
-                    debug!("read_square val: %?", val);
+                    debug!("read_square val: {:?}", val);
                     Some(val)
                 }
             }
         }
     }
 
-    pub fn parse_move(input: ~str) -> ChessMove {
-        use games::chess::*;
+    pub fn parse_opt_move(&mut self, input: Option<~str>) -> ChessMove {
+        let ret = match input {
+            Some(s) => self.parse_move(s),
+            None    => self.no_input(),
+        };
+        self.reparse.attempts_since_success = 0;
+        ret
+    }
+
+    pub fn parse_move(&mut self, input: ~str) -> ChessMove {
+        use ch = games::chess;
 
         if input.char_len() < 2 {
-            return unreadable_move::cond.raise(input.clone())
+            return self.reparse(input.clone());
         }
 
-        let (from_letter, from_number, post_idx) = match read_square(input) {
-            None => return unreadable_move::cond.raise(input.clone()),
+        let (from_letter, from_number, post_idx) = match self.read_square(input) {
+            None => return self.reparse(input.clone()),
             Some(t) => t
         };
 
-        let from_letter = Col::from_char(from_letter);
-        let from_number = Row::from_char(from_number);
+        let from_letter = ch::Col::from_char(from_letter);
+        let from_number = ch::Row::from_char(from_number);
 
         let rest = input.slice_from(post_idx);
 
-        let (to_letter, to_number, _) = match read_square(rest) {
-            None => return unreadable_move::cond.raise(input.clone()),
+        let (to_letter, to_number, _) = match self.read_square(rest) {
+            None => return self.reparse(input.clone()),
             Some(t) => t
         };
 
-        let to_letter = Col::from_char(to_letter);
-        let to_number = Row::from_char(to_number);
+        let to_letter = ch::Col::from_char(to_letter);
+        let to_number = ch::Row::from_char(to_number);
 
         if (from_letter.is_some() && from_number.is_some()
             && to_letter.is_some() && to_number.is_some()) {
-            (Square{letter: from_letter.unwrap(), number: from_number.unwrap()},
-             Square{letter:   to_letter.unwrap(), number: to_number.unwrap()})
+            (ch::Square{letter: from_letter.unwrap(), number: from_number.unwrap()},
+             ch::Square{letter:   to_letter.unwrap(), number: to_number.unwrap()})
         } else {
-            unreadable_move::cond.raise(input.clone())
+            self.reparse(input.clone())
         }
+    }
     }
 
     pub fn chess() {
-        use games::chess::*;
-        let v = Variant{
-            pawn_promotion: ~[queen, rook, bishop, knight],
-            rules: NormalChess,
+        use ch = games::chess;
+        let v = ch::Variant{
+            pawn_promotion: ~[ch::queen, ch::rook, ch::bishop, ch::knight],
+            rules: ch::NormalChess,
         };
 
         chess_game(v);
     }
 
     pub fn antichess() {
-        use games::chess::*;
-        let v = Variant{
-            pawn_promotion: ~[queen, rook, bishop, knight],
-            rules: Antichess(AntichessVariants{
+        use ch = games::chess;
+        let v = ch::Variant{
+            pawn_promotion: ~[ch::queen, ch::rook, ch::bishop, ch::knight],
+            rules: ch::Antichess(ch::AntichessVariants{
                     fewer_pieces_wins_on_stalemate: false,
-                    king_has_royal_power: RoyalGettingCheckmatedLoses,
+                    king_has_royal_power: ch::RoyalGettingCheckmatedLoses,
                 })};
 
         chess_game(v);
     }
 
     pub fn chess_game(variant: chess::Variant) {
-        use games::chess::*;
+        use ch = games::chess;
+        use AV = games::chess::AntichessVariants;
+        use Antichess = games::chess::Antichess;
         use std::io;
+        use std::io::buffered::BufferedReader;
 
-        let mut b = Game {
+        let mut b = ch::Game {
             variant: variant,
-            board: chess::initial_board,
-            current: white,
+            board: ch::initial_board,
+            current: ch::white,
             black_taken: ~[], // ~[queen],
             white_taken: ~[], // ~[pawn, pawn]
         };
 
         let inp = io::stdin();
+        let mut inp = BufferedReader::new(inp);
+
         loop {
-            println(fmt!("%s", b.to_str()));
+            println(format!("{:s}", b.to_str()));
 
             match b.is_game_over() {
                 None => {},
-                Some(end) => { println(fmt!("%?", end)); break; }
+                Some(end) => {
+                    match end {
+                        ch::CheckMateFor(c) => {
+                            let winner = match b.variant.rules {
+                                Antichess(AV {king_has_royal_power:
+                                              ch::RoyalGettingCheckmatedWins, ..})
+                                    => c.rev(),
+                                _   => c
+                            };
+                            println!("victory for {:?}, {:?}", winner, end);
+                        }
+                        ch::StaleMate =>
+                                // XXX antichess has piece count variants
+                            println!("stalemate, {:?}", end),
+                        ch::AllPiecesGone | ch::AllPiecesButKingGone =>
+                            println!("victory for {:?}, {:?}", b.current, end),
+                    }
+                    break;
+                }
             }
 
             if b.is_check() { println("Check"); }
@@ -1205,22 +1271,20 @@ pub mod games {
             print("moves: ");
             for m in b.moves_iter() {
                 let (from, to) = m;
-                print(fmt!("(%s, %s)", from.to_str(), to.to_str()));
+                print(format!("({:s}, {:s})", from.to_str(), to.to_str()));
             }
             println("");
 
 
+            let (from, to) = get_move(&b, &mut inp);
 
-            let (from, to) = get_move(&b, inp);
-            do invalid_move::cond.trap(|(r, m, b)| {
-                    let m : Move = m;
-                    print(fmt!("invalid move: %s because %s\n",
-                               m.to_str(), r.reason()));
-                    print("try again, ");
-                    get_move(&b, inp)
-                }).inside {
-                b.do_move((from, to));
-            }
+            let handler = |r:ch::InvalidMoveReason, m:ch::Move, b:&ch::Game| {
+                print(format!("invalid move: {:s} because {:s}\n",
+                                  m.to_str(), r.reason()));
+                print("try again, ");
+                get_move(b, &mut inp)
+            };
+            b.do_move((from, to), &handler);
         }
     }
 }
