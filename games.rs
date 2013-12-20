@@ -6,7 +6,7 @@ use std::num::One;
 fn print_usage(program: &str, _opts: &[Opt]) {
     printfln!("Usage: %s [options]", program);
     println("--chess");
-    println("--antichess");
+    println("--antichess [variant]");
     println("-h --help\tUsage");
 }
 
@@ -14,7 +14,7 @@ fn main() {
     use std::os;
 
     let opts = ~[optflag("chess"),
-                 optopt("antichess"),
+                 optflagopt("antichess"),
                  optflag("h"),
                  optflag("help"),];
     let args = os::args();
